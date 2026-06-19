@@ -1,0 +1,16 @@
+appId: com.toolset.app
+productName: 工具集
+directories:
+  output: release
+files:
+  - dist/**/*
+  - assets/**/*
+win:
+  target: nsis
+  icon: assets/icon.png
+mac:
+  target: dmg
+  icon: assets/icon.icns
+linux:
+  target: AppImage
+  icon: assets/icon.png
