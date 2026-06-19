@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 release/
+.cache/
 
 # Environment files
 .env
@@ -34,4 +35,3 @@ Thumbs.db
 
 # Package
 *.tgz
-.DS_Store
