@@ -1,8 +1,25 @@
-/** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
+    '../reminder-plugin/src/renderer/**/*.{tsx,ts,css}',
+  ],
+  safelist: [
+    { pattern: /^border-l-(blue|emerald|purple|amber|red|primary)-\d+\/\d+/ },
+    { pattern: /^bg-(indigo|emerald|amber|red|primary|slate)-\d+\/\d+/ },
+    { pattern: /^text-(indigo|emerald|amber|red|primary)-\d+/ },
+    { pattern: /^from-(indigo|emerald|purple|blue|amber)-\d+/ },
+    { pattern: /^to-(indigo|emerald|purple|blue|amber)-\d+/ },
+    { pattern: /^border-(indigo|emerald|amber|red|primary)-\d+\/\d+/ },
+    { pattern: /^hover:(bg|text)-(indigo|emerald|red|slate)-\d+/ },
+    { pattern: /^placeholder-(slate)-\d+/ },
+    { pattern: /^bg-gradient-to-br/ },
+    { pattern: /^bg-clip-text/ },
+    { pattern: /^tabular-nums/ },
+    { pattern: /^animate-pulse/ },
+    { pattern: /^inset-0/ },
+    { pattern: /^backdrop-blur/ },
+    { pattern: /^cursor-(grab|grabbing)/ },
   ],
   darkMode: 'class',
   theme: {

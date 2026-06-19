@@ -209,6 +209,7 @@ app.whenReady().then(() => {
     const manifestPath = path.join(sourcePath, 'plugin.json')
 
     if (!fs.existsSync(manifestPath)) {
+      logger.error('Plugin Install', `Selected directory does not contain plugin.json: ${sourcePath}`)
       return { success: false, error: '所选目录不包含 plugin.json' }
     }
 
@@ -219,6 +220,7 @@ app.whenReady().then(() => {
       pluginId = JSON.parse(raw).id
       if (!pluginId) throw new Error('插件 ID 为空')
     } catch (e) {
+      logger.error('Plugin Install', `Invalid plugin.json in ${sourcePath}:`, e)
       return { success: false, error: `无效的 plugin.json: ${(e as Error).message}` }
     }
 
@@ -243,14 +245,19 @@ app.whenReady().then(() => {
 
     try {
       copyPluginFiles(sourcePath, targetPath)
+      logger.info('Plugin Install', `Copied plugin "${pluginId}" from ${sourcePath} to ${targetPath}`)
     } catch (e) {
+      logger.error('Plugin Install', `Failed to copy plugin "${pluginId}" directory:`, e)
       return { success: false, error: `复制插件目录失败: ${(e as Error).message}` }
     }
 
-    // 重新加载插件
+    // 重新加载插件（先移除内存中的旧条目，防止 "already loaded" 跳过）
     try {
+      pluginLoader.removePlugin(pluginId)
       pluginLoader.loadAll(pluginsDir)
+      logger.info('Plugin Install', `Reloaded all plugins after installing "${pluginId}"`)
     } catch (e) {
+      logger.error('Plugin Install', `Failed to load plugin "${pluginId}":`, e)
       return { success: false, error: `加载插件失败: ${(e as Error).message}` }
     }
 
@@ -261,13 +268,15 @@ app.whenReady().then(() => {
   ipcMain.handle('plugin:uninstall', async (_event, pluginId: string) => {
     const targetPath = path.join(pluginsDir, pluginId)
     if (!fs.existsSync(targetPath)) {
+      // 目录已不存在，但内存中可能还有残留，清理后再返回
+      pluginLoader.removePlugin(pluginId)
       return { success: false, error: `插件 "${pluginId}" 不存在` }
     }
 
     try {
       fs.rmSync(targetPath, { recursive: true, force: true })
-      // 重新加载插件
-      pluginLoader.loadAll(pluginsDir)
+      // 从内存中移除，避免残留条目导致下次 loadAll 时跳过
+      pluginLoader.removePlugin(pluginId)
       return { success: true }
     } catch (e) {
       return { success: false, error: `删除插件目录失败: ${(e as Error).message}` }

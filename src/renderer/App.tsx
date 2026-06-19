@@ -7,7 +7,7 @@ import ToolLauncher from './pages/ToolLauncher'
 import PluginManagerPage from './pages/PluginManager'
 import SystemSettings from './pages/SystemSettings'
 import ToastContainer from './components/ToastContainer'
-import ErrorBoundary from './components/ErrorBoundary'
+import PluginShell from './components/PluginShell'
 import { useToastStore } from './stores/toastStore'
 
 /** 初始化已保存的主题 */
@@ -71,10 +71,16 @@ export default function App() {
     const pluginPages = (window as any).__PLUGIN_REGISTRY__?.[pluginId]
     if (pluginPages && pluginPages[pageId]) {
       const Component = pluginPages[pageId]
+      const plugin = plugins.find((p) => p.id === pluginId)
       return (
-        <ErrorBoundary>
-          <Component onNavigate={(p: string) => handleNavigate(`${pluginId}:${p}`)} />
-        </ErrorBoundary>
+        <PluginShell
+          key={`${pluginId}:${pageId}`}
+          pluginId={pluginId}
+          pageId={pageId}
+          Component={Component}
+          useHostStyles={plugin?.useHostStyles !== false}
+          onNavigate={(p: string) => handleNavigate(`${pluginId}:${p}`)}
+        />
       )
     }
 

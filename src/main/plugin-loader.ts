@@ -68,6 +68,7 @@ export class PluginLoader {
             pluginMain.register(ctx)
             logger.info('PluginLoader', `Loaded plugin: ${manifest.id} (${manifest.name})`)
           } catch (loadErr) {
+            console.error('[PluginLoader] Failed to load main entry for plugin:', manifest.id, loadErr)
             addDummy(`main entry load failed: ${(loadErr as Error).message || loadErr}`)
           }
         } else {
@@ -89,6 +90,8 @@ export class PluginLoader {
       getMainWindow: () => this.mainWindow,
       getToolsetPreloadPath: () => path.join(__dirname, '../preload/index.js'),
       registerIpcHandler: (channel, handler) => {
+        // 先移除旧 handler，避免热重载时因重复注册报错
+        try { ipcMain.removeHandler(channel) } catch { /* ignore */ }
         ipcMain.handle(channel, handler)
       },
       registerProtocol: (scheme, handler) => {
@@ -207,6 +210,10 @@ export class PluginLoader {
       jsPath: `plugin://${id}/renderer/index.js`,
       cssPath: `plugin://${id}/renderer/index.css`,
     }))
+  }
+
+  removePlugin(id: string) {
+    this.plugins.delete(id)
   }
 
   getPlugin(id: string): LoadedPlugin | undefined {

@@ -23,6 +23,7 @@ export interface PluginManifest {
   enabled: boolean
   builtIn: boolean
   pages: PluginPage[]
+  useHostStyles?: boolean
 }
 
 export interface PluginPage {

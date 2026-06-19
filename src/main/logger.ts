@@ -15,18 +15,33 @@ class FileLogger {
     if (this.initialized) return
     this.logDir = path.join(app.getPath('userData'), 'logs')
     if (!fs.existsSync(this.logDir)) {
-      fs.mkdirSync(this.logDir, { recursive: true })
+      try {
+        fs.mkdirSync(this.logDir, { recursive: true })
+      } catch {
+        return
+      }
     }
     const date = new Date()
     const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`
     this.logFile = path.join(this.logDir, `toolset-${dateStr}.log`)
-    this.stream = fs.createWriteStream(this.logFile, { flags: 'a' })
-    this.initialized = true
-
-    // 清理 7 天前的日志
-    this.cleanOldLogs()
-
-    this.info('Logger', `Log file: ${this.logFile}`)
+    try {
+      this.stream = fs.createWriteStream(this.logFile, { flags: 'a' })
+      this.initialized = true
+      this.cleanOldLogs()
+      this.write('INFO', 'Logger', `Log file: ${this.logFile}`)
+    } catch (err) {
+      // 文件可能被其他进程锁定或无权限，尝试删除旧文件重新创建
+      try {
+        fs.rmSync(this.logFile, { force: true })
+        this.stream = fs.createWriteStream(this.logFile, { flags: 'a' })
+        this.initialized = true
+        this.cleanOldLogs()
+        this.write('INFO', 'Logger', `Log file re-created: ${this.logFile}`)
+      } catch (retryErr) {
+        console.error(`[Logger] Failed to open log file "${this.logFile}":`, err, retryErr)
+        this.initialized = false
+      }
+    }
   }
 
   private cleanOldLogs() {
@@ -61,7 +76,11 @@ class FileLogger {
 
     // 写入文件
     if (this.stream) {
-      this.stream.write(line + '\n')
+      try {
+        this.stream.write(line + '\n')
+      } catch {
+        // 写入失败时静默处理
+      }
     }
 
     // 同时输出到终端

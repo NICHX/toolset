@@ -1,7 +1,7 @@
 "use client"
 
 import { type ReactNode, useState, useEffect, useRef } from 'react'
-import { Minus, Square, X, Search, Sparkles, Puzzle, Settings } from 'lucide-react'
+import { Bell, Minus, Square, X, Search, Sparkles, Puzzle, Settings } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { PluginManifest } from '../../../shared/types'
 
@@ -10,6 +10,11 @@ interface AppLayoutProps {
   currentPage: string
   onNavigate: (page: string) => void
   plugins: PluginManifest[]
+}
+
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  Sparkles, Puzzle, Settings, Bell, LayoutDashboard: Sparkles,
+  ListTodo: Puzzle, History: Bell,
 }
 
 function isHomePage(page: string): boolean {
@@ -22,6 +27,7 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
   const [searchQuery, setSearchQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const [searchTasks, setSearchTasks] = useState<any[]>([])
 
   const onHomePage = isHomePage(currentPage)
 
@@ -41,6 +47,41 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  useEffect(() => {
+    if (searchOpen && currentPage.startsWith('reminder:')) {
+      (window.electronAPI as any).task?.getAll?.().then(setSearchTasks).catch(() => {})
+    } else {
+      setSearchTasks([])
+      setSearchQuery('')
+    }
+  }, [searchOpen, currentPage])
+
+  const filteredTasks = searchQuery.trim()
+    ? searchTasks.filter((t: any) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : []
+
+  useEffect(() => {
+    setSelectedIdx(0)
+  }, [searchQuery])
+
+  const handleSearchNavigate = (page: string) => {
+    setSearchOpen(false)
+    setSearchQuery('')
+    onNavigate(page)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIdx((i) => Math.min(i + 1, filteredTasks.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIdx((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' && filteredTasks[selectedIdx]) {
+      handleSearchNavigate('reminder:tasks')
+    }
+  }
 
   useEffect(() => {
     if (window.electronAPI.app.platform !== 'darwin') {
@@ -76,10 +117,6 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
   const activePluginId = getActivePluginId()
   const activePlugin = activePluginId ? plugins.find((p) => p.id === activePluginId && p.enabled) : null
 
-  const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-    Sparkles, Puzzle, Settings,
-  }
-
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-slate-950 overflow-hidden">
       <aside className="w-56 flex-shrink-0 bg-white/80 dark:bg-slate-900/80 border-r border-gray-200/80 dark:border-slate-800/50 flex flex-col transition-all duration-300">
@@ -93,26 +130,41 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {(onHomePage || currentPage.startsWith('_system:')) ? (
             <>
-              <button onClick={() => onNavigate('home')}
-                className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-                  onHomePage ? 'bg-primary-600/20 text-primary-400 shadow-sm' : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
-                )}>
+              <button
+                onClick={() => onNavigate('home')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+                  onHomePage
+                    ? 'bg-primary-600/20 text-primary-400 shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
+                )}
+              >
                 <Sparkles className={cn('w-4 h-4', onHomePage && 'text-primary-400')} />
                 工具首页
                 {onHomePage && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500" />}
               </button>
-              <button onClick={() => onNavigate('_system:manager')}
-                className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-                  currentPage === '_system:manager' ? 'bg-primary-600/20 text-primary-400 shadow-sm' : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
-                )}>
+              <button
+                onClick={() => onNavigate('_system:manager')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+                  currentPage === '_system:manager'
+                    ? 'bg-primary-600/20 text-primary-400 shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
+                )}
+              >
                 <Puzzle className={cn('w-4 h-4', currentPage === '_system:manager' && 'text-primary-400')} />
                 插件管理
                 {currentPage === '_system:manager' && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500" />}
               </button>
-              <button onClick={() => onNavigate('_system:settings')}
-                className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-                  currentPage === '_system:settings' ? 'bg-primary-600/20 text-primary-400 shadow-sm' : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
-                )}>
+              <button
+                onClick={() => onNavigate('_system:settings')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+                  currentPage === '_system:settings'
+                    ? 'bg-primary-600/20 text-primary-400 shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
+                )}
+              >
                 <Settings className={cn('w-4 h-4', currentPage === '_system:settings' && 'text-primary-400')} />
                 系统设置
                 {currentPage === '_system:settings' && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500" />}
@@ -120,27 +172,42 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
             </>
           ) : (
             <>
-              <button onClick={() => onNavigate('home')}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800/50 transition-all duration-200 mb-2">
+              <button
+                onClick={() => onNavigate('home')}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800/50 transition-all duration-200 mb-2"
+              >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M19 12H5" /><polyline points="12 19 5 12 12 5" />
+                  <path d="M19 12H5" />
+                  <polyline points="12 19 5 12 12 5" />
                 </svg>
                 返回首页
               </button>
               {activePlugin && (
                 <>
-                  <div className="pt-2 pb-1"><div className="flex items-center gap-2 px-3">
-                    <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">{activePlugin.name}</span>
-                  </div></div>
+                  <div className="pt-2 pb-1">
+                    <div className="flex items-center gap-2 px-3">
+                      {(() => {
+                        const PluginIcon = ICON_MAP[activePlugin.icon] || Bell
+                        return <PluginIcon className="w-3.5 h-3.5 text-primary-400" />
+                      })()}
+                      <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">{activePlugin.name}</span>
+                    </div>
+                  </div>
                   {activePlugin.pages.map((page) => {
-                    const PageIcon = ICON_MAP[page.icon] || Sparkles
+                    const PageIcon = ICON_MAP[page.icon] || Bell
                     const pageKey = `${activePlugin.id}:${page.id}`
                     const isPageActive = currentPage === pageKey
                     return (
-                      <button key={pageKey} onClick={() => onNavigate(pageKey)}
-                        className={cn('w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 pl-9',
-                          isPageActive ? 'bg-primary-600/20 text-primary-400 shadow-sm' : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
-                        )}>
+                      <button
+                        key={pageKey}
+                        onClick={() => onNavigate(pageKey)}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 pl-9',
+                          isPageActive
+                            ? 'bg-primary-600/20 text-primary-400 shadow-sm'
+                            : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800/50'
+                        )}
+                      >
                         <PageIcon className={cn('w-4 h-4', isPageActive && 'text-primary-400')} />
                         {page.name}
                         {isPageActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500" />}
@@ -152,37 +219,135 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
             </>
           )}
         </nav>
+
         <div className="px-5 py-4 border-t border-gray-200/80 dark:border-slate-800/50">
-          <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.0</p>
+          {(onHomePage || currentPage.startsWith('_system:')) ? (
+            <p className="text-xs text-gray-400 dark:text-slate-600">
+              {onHomePage ? '选择一个工具开始使用' : '工具集 v1.0.0'}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.0</p>
+          )}
         </div>
       </aside>
+
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className={cn('flex-shrink-0 flex items-center justify-between transition-all duration-200',
-          onHomePage ? 'h-0 overflow-hidden border-0' : 'bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-b border-gray-200/80 dark:border-slate-800/50',
+        <header className={cn(
+          'flex-shrink-0 flex items-center justify-between transition-all duration-200',
+          onHomePage
+            ? 'h-0 overflow-hidden border-0'
+            : 'bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-b border-gray-200/80 dark:border-slate-800/50',
           showControls ? 'h-[52px] pr-0' : 'h-14 px-6',
           onHomePage ? '' : (showControls ? '' : 'px-6')
         )}>
           {!onHomePage && (
             <>
-              <h1 className={cn('text-base font-semibold text-gray-900 dark:text-slate-100', showControls ? 'pl-4' : '')}>{getPageTitle()}</h1>
+              <h1 className={cn('text-base font-semibold text-gray-900 dark:text-slate-100', showControls ? 'pl-4' : '')}>
+                {getPageTitle()}
+              </h1>
+
+              {currentPage.startsWith('reminder:') && (searchOpen ? (
+                <div className="relative flex-1 max-w-md mx-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-500" />
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    className="input-field pl-9 pr-9 h-9 text-sm"
+                    placeholder="搜索任务..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onBlur={() => setTimeout(() => { setSearchOpen(false); setSearchQuery('') }, 200)}
+                  />
+                  {searchQuery.trim() && (
+                    <button
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+                      onClick={() => { setSearchOpen(false); setSearchQuery('') }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {filteredTasks.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 rounded-xl border border-gray-200/80 dark:border-slate-700/50 shadow-xl overflow-hidden z-50">
+                      {filteredTasks.slice(0, 10).map((task: any, idx: number) => (
+                        <button
+                          key={task.id}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors ${
+                            idx === selectedIdx
+                              ? 'bg-primary-500/10 text-primary-400'
+                              : 'text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800/50'
+                          }`}
+                          onClick={() => handleSearchNavigate('reminder:tasks')}
+                          onMouseEnter={() => setSelectedIdx(idx)}
+                        >
+                          <Search className="w-4 h-4 flex-shrink-0" />
+                          <span className="flex-1 truncate">{task.name}</span>
+                          <span className="text-xs text-gray-400 dark:text-slate-500 flex-shrink-0">
+                            {task.enabled ? '运行中' : '已暂停'}
+                          </span>
+                        </button>
+                      ))}
+                      {filteredTasks.length > 10 && (
+                        <div className="px-4 py-2 text-xs text-gray-400 dark:text-slate-500 border-t border-gray-200/80 dark:border-slate-700/50 text-center">
+                          还有 {filteredTasks.length - 10} 个结果，前往任务列表查看
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 50) }}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800/50 transition-colors"
+                >
+                  <Search className="w-4 h-4" />
+                  <span className="hidden sm:inline">搜索 (Ctrl+F)</span>
+                </button>
+              ))}
+
               <div className="flex items-center gap-3 h-full">
+                {!currentPage.startsWith('_system:') && (
+                  <span className="text-sm text-gray-500 dark:text-slate-400">
+                    {new Date().toLocaleDateString('zh-CN', {
+                      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+                    })}
+                  </span>
+                )}
                 {showControls && (
                   <div className="flex h-full" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                    <button onClick={() => window.electronAPI.app.minimize()} className="w-[46px] h-full flex items-center justify-center hover:bg-gray-200/80 dark:hover:bg-slate-700/60 transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200"><Minus className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => window.electronAPI.app.minimize()} className="w-[46px] h-full flex items-center justify-center hover:bg-gray-200/80 dark:hover:bg-slate-700/60 transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200">
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
                     <button onClick={() => window.electronAPI.app.maximize()} className="w-[46px] h-full flex items-center justify-center hover:bg-gray-200/80 dark:hover:bg-slate-700/60 transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200">
                       {isMaximized ? (
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="5" width="9" height="9" rx="1" /><path d="M12 5V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v1" /></svg>
-                      ) : (<Square className="w-3.5 h-3.5" />)}
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <rect x="3" y="5" width="9" height="9" rx="1" />
+                          <path d="M12 5V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v1" />
+                        </svg>
+                      ) : (
+                        <Square className="w-3.5 h-3.5" />
+                      )}
                     </button>
-                    <button onClick={() => window.electronAPI.app.close()} className="w-[46px] h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors text-gray-500 dark:text-slate-400"><X className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => window.electronAPI.app.close()} className="w-[46px] h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors text-gray-500 dark:text-slate-400">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
               </div>
             </>
           )}
         </header>
+
         <div className={cn('flex-1 overflow-auto', onHomePage ? 'p-0' : 'p-6')}>
-          <div className={onHomePage ? '' : 'animate-fade-in'}>{children}</div>
+          <div
+            className={cn(
+              onHomePage ? '' : 'animate-fade-in',
+              activePluginId && `plugin-${activePluginId}`
+            )}
+            data-plugin={activePluginId || undefined}
+          >
+            {children}
+          </div>
         </div>
       </main>
     </div>
