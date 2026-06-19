@@ -43,19 +43,30 @@ export class PluginLoader {
         const manifest = JSON.parse(raw) as PluginManifest
         manifest.enabled = manifest.enabled ?? true
 
+        // 确保插件加入 map（即使 main entry 加载失败也能在列表中显示）
+        const baseDir = path.join(pluginsDir, entry.name)
+        const addDummy = (errMsg?: string) => {
+          this.plugins.set(manifest.id, { manifest, entry: { name: manifest.name, version: manifest.version, register: () => {} }, baseDir })
+          if (errMsg) logger.warn('PluginLoader', `Plugin "${manifest.id}" added with dummy entry: ${errMsg}`)
+        }
+
         // 加载主进程入口
         const mainEntryPath = path.join(pluginsDir, entry.name, 'main', 'index.js')
         if (fs.existsSync(mainEntryPath)) {
-          const pluginMain = require(mainEntryPath) as PluginMainEntry
-          this.plugins.set(manifest.id, { manifest, entry: pluginMain, baseDir: path.join(pluginsDir, entry.name) })
+          try {
+            const pluginMain = require(mainEntryPath) as PluginMainEntry
+            this.plugins.set(manifest.id, { manifest, entry: pluginMain, baseDir })
 
-          // 创建插件上下文
-          const ctx = this.createPluginContext(manifest)
-          pluginMain.register(ctx)
-          logger.info('PluginLoader', `Loaded plugin: ${manifest.id} (${manifest.name})`)
+            // 创建插件上下文
+            const ctx = this.createPluginContext(manifest)
+            pluginMain.register(ctx)
+            logger.info('PluginLoader', `Loaded plugin: ${manifest.id} (${manifest.name})`)
+          } catch (loadErr) {
+            addDummy(`main entry load failed: ${(loadErr as Error).message || loadErr}`)
+          }
         } else {
           logger.info('PluginLoader', `No main entry for plugin: ${manifest.id}, skipping main process`)
-          this.plugins.set(manifest.id, { manifest, entry: { name: manifest.name, version: manifest.version, register: () => {} }, baseDir: path.join(pluginsDir, entry.name) })
+          addDummy()
         }
       } catch (err) {
         logger.error('PluginLoader', `Failed to load plugin from ${manifestPath}:`, err)

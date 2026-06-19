@@ -89,7 +89,7 @@ function setupGenericIpcHandlers() {
 }
 
 // 过滤复制插件目录（排除源码文件，只保留运行时需要的文件）
-const IGNORE_PATTERNS = ['src', '.git', '.github', '.vscode', '__tests__', 'dist']
+const IGNORE_PATTERNS = ['src', '.git', '.github', '.vscode', '__tests__', 'dist', 'node_modules']
 
 function isIgnored(name: string): boolean {
   return IGNORE_PATTERNS.includes(name) ||
@@ -233,16 +233,11 @@ app.whenReady().then(() => {
 
     const targetPath = path.join(pluginsDir, pluginId)
     if (fs.existsSync(targetPath)) {
-      // 如果目录存在但插件未成功加载（上次安装失败），先清理目录再重新安装
-      if (!pluginLoader.getPluginIds().includes(pluginId)) {
-        logger.warn('Plugin Install', `Directory exists but plugin "${pluginId}" is not loaded, removing and re-installing`)
-        try {
-          fs.rmSync(targetPath, { recursive: true, force: true })
-        } catch (e) {
-          return { success: false, error: `清理失败的插件目录失败: ${(e as Error).message}` }
-        }
-      } else {
-        return { success: false, error: `插件 "${pluginId}" 已存在` }
+      logger.info('Plugin Install', `Plugin "${pluginId}" directory exists, removing before re-install`)
+      try {
+        fs.rmSync(targetPath, { recursive: true, force: true })
+      } catch (e) {
+        return { success: false, error: `清理旧的插件目录失败: ${(e as Error).message}` }
       }
     }
 

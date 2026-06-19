@@ -8,6 +8,18 @@ import PluginManagerPage from './pages/PluginManager'
 import SystemSettings from './pages/SystemSettings'
 import ToastContainer from './components/ToastContainer'
 import ErrorBoundary from './components/ErrorBoundary'
+import { useToastStore } from './stores/toastStore'
+
+/** 初始化已保存的主题 */
+function initTheme() {
+  const saved = localStorage.getItem('toolset-theme')
+  if (saved === 'light') {
+    document.documentElement.classList.remove('dark')
+  } else {
+    document.documentElement.classList.add('dark')
+  }
+}
+initTheme()
 
 type Page = 'home' | (string & {})
 
@@ -26,10 +38,17 @@ export default function App() {
   const [page, setPage] = useState<Page>('home')
   const loadPlugins = usePluginStore((s) => s.loadPlugins)
   const plugins = usePluginStore((s) => s.plugins)
+  const addToast = useToastStore((s) => s.addToast)
 
   useEffect(() => {
     loadPlugins()
   }, [loadPlugins])
+
+  // 暴露全局 Toast 函数供插件调用
+  useEffect(() => {
+    window.__showToast = (message, type = 'info') => addToast(message, type)
+    return () => { delete window.__showToast }
+  }, [addToast])
 
   const renderPage = useCallback(() => {
     if (isHomePage(page)) {

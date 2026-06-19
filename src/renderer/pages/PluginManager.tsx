@@ -71,8 +71,8 @@ export default function PluginManagerPage() {
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-bold text-slate-100">插件管理</h2>
-          <p className="text-sm text-slate-400 mt-1">管理和安装工具集插件</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">插件管理</h2>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">管理和安装工具集插件</p>
         </div>
         <div className="flex gap-2">
           <button onClick={handleRefresh} className="btn-ghost p-2" title="刷新">
@@ -103,8 +103,8 @@ export default function PluginManagerPage() {
       <div className="space-y-3">
         {plugins.length === 0 && !loading && (
           <div className="text-center py-16">
-            <Puzzle className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400">暂无已安装的插件</p>
+            <Puzzle className="w-12 h-12 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+            <p className="text-gray-500 dark:text-slate-400">暂无已安装的插件</p>
             <button onClick={handleInstall} className="btn-primary mt-4 flex items-center gap-2 mx-auto">
               <Download className="w-4 h-4" />
               安装插件
@@ -114,28 +114,28 @@ export default function PluginManagerPage() {
 
         {loading && plugins.length === 0 && (
           <div className="text-center py-16">
-            <RefreshCw className="w-8 h-8 text-slate-500 mx-auto animate-spin" />
-            <p className="text-slate-400 mt-4">加载中...</p>
+            <RefreshCw className="w-8 h-8 text-gray-400 dark:text-slate-500 mx-auto animate-spin" />
+            <p className="text-gray-500 dark:text-slate-400 mt-4">加载中...</p>
           </div>
         )}
 
         {plugins.map((plugin) => (
-          <div key={plugin.id} className="rounded-2xl border border-slate-800/50 bg-slate-900/60 backdrop-blur-sm p-5">
+          <div key={plugin.id} className="rounded-2xl border border-gray-200/80 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/60 backdrop-blur-sm p-5">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-4">
                 <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0', plugin.bg || 'bg-primary-500/10')}>
-                  <Puzzle className="w-6 h-6 text-slate-200" />
+                  <Puzzle className="w-6 h-6 text-gray-700 dark:text-slate-200" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-slate-100">{plugin.name}</h3>
-                  <p className="text-sm text-slate-400 mt-0.5">{plugin.description}</p>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-slate-100">{plugin.name}</h3>
+                  <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{plugin.description}</p>
                   <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs text-slate-500">v{plugin.version}</span>
+                    <span className="text-xs text-gray-400 dark:text-slate-500">v{plugin.version}</span>
                     <span className={cn(
                       'text-xs px-2 py-0.5 rounded-full',
                       plugin.enabled
                         ? 'bg-emerald-500/10 text-emerald-400'
-                        : 'bg-slate-800/50 text-slate-500'
+                        : 'bg-gray-200/80 dark:bg-slate-800/50 text-gray-500 dark:text-slate-500'
                     )}>
                       {plugin.enabled ? '已启用' : '已禁用'}
                     </span>
@@ -146,7 +146,7 @@ export default function PluginManagerPage() {
                   {plugin.pages && plugin.pages.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-3">
                       {plugin.pages.map((p) => (
-                        <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/50 text-slate-400">
+                        <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800/50 text-gray-500 dark:text-slate-400">
                           {p.name}
                         </span>
                       ))}
@@ -161,7 +161,7 @@ export default function PluginManagerPage() {
                   className={cn(
                     'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200',
                     plugin.enabled
-                      ? 'bg-slate-800/50 text-slate-400 hover:bg-red-500/10 hover:text-red-400'
+                      ? 'bg-gray-200/80 dark:bg-slate-800/50 text-gray-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-400'
                       : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
                   )}
                 >
@@ -175,7 +175,7 @@ export default function PluginManagerPage() {
                   <button
                     onClick={() => handleUninstall(plugin.id, plugin.name)}
                     disabled={actionLoading === `uninstall-${plugin.id}`}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200"
                   >
                     <Trash2 className="w-3 h-3" />
                     卸载

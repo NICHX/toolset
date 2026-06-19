@@ -16,22 +16,25 @@ interface PluginState {
 
 function loadRendererScript(jsPath: string, cssPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Load CSS
+    const scriptId = `plugin-js-${jsPath}`
     const linkId = `plugin-css-${jsPath}`
-    if (!document.getElementById(linkId)) {
-      const link = document.createElement('link')
-      link.id = linkId
-      link.rel = 'stylesheet'
-      link.href = cssPath
-      document.head.appendChild(link)
-    }
+
+    // 移除旧 CSS（插件重新安装时需替换）
+    const oldLink = document.getElementById(linkId)
+    if (oldLink) oldLink.remove()
+
+    // 移除旧 JS 脚本标签（替换旧的已崩溃 IIFE）
+    const oldScript = document.getElementById(scriptId)
+    if (oldScript) oldScript.remove()
+
+    // Load CSS
+    const link = document.createElement('link')
+    link.id = linkId
+    link.rel = 'stylesheet'
+    link.href = cssPath
+    document.head.appendChild(link)
 
     // Load JS (IIFE)
-    const scriptId = `plugin-js-${jsPath}`
-    if (document.getElementById(scriptId)) {
-      resolve() // Already loaded
-      return
-    }
     const script = document.createElement('script')
     script.id = scriptId
     script.src = jsPath
@@ -109,6 +112,13 @@ export const usePluginStore = create<PluginState>((set, get) => ({
         // 重新加载插件列表
         const plugins = await window.electronAPI.plugin.getLoaded()
         set({ plugins })
+        // 重新加载渲染进程脚本（IIFE），替换可能已崩溃的旧版本
+        try {
+          const scripts = await window.electronAPI.plugin.getRendererScripts()
+          await Promise.all(scripts.map((s) => loadRendererScript(s.jsPath, s.cssPath)))
+        } catch (scriptErr) {
+          console.warn('[PluginStore] Failed to load renderer scripts after install:', scriptErr)
+        }
       }
       return result
     } catch (err) {
