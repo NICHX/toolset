@@ -43,6 +43,12 @@ export class PluginLoader {
         const manifest = JSON.parse(raw) as PluginManifest
         manifest.enabled = manifest.enabled ?? true
 
+        // 跳过已经加载的插件，避免重复注册 IPC handler
+        if (this.plugins.has(manifest.id)) {
+          logger.info('PluginLoader', `Plugin "${manifest.id}" already loaded, skipping`)
+          continue
+        }
+
         // 确保插件加入 map（即使 main entry 加载失败也能在列表中显示）
         const baseDir = path.join(pluginsDir, entry.name)
         const addDummy = (errMsg?: string) => {
