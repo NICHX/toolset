@@ -1,7 +1,7 @@
 "use client"
 
 import { type ReactNode, useState, useEffect, useRef } from 'react'
-import { Bell, Minus, Square, X, Search, Sparkles, Puzzle, Settings } from 'lucide-react'
+import { Bell, X, Search, Sparkles, Puzzle, Settings } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { PluginManifest } from '../../../shared/types'
 
@@ -127,34 +127,38 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
         {/* Windows 窗口控制按钮 — 集成在侧边栏顶部 */}
         <div className={cn("flex flex-col", needsWinControls ? "pt-0" : "pt-[38px]")} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
           {needsWinControls && (
-            <div className="flex items-center gap-1.5 pl-3 h-[34px]" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <div className="flex items-center gap-2 pl-3 h-[38px] border-b border-gray-200/80 dark:border-slate-800/50 bg-gray-50/50 dark:bg-slate-900/50" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
               <button
                 onClick={() => window.electronAPI.app.close()}
-                className="w-3 h-3 rounded-full bg-red-500 hover:brightness-110 transition-all flex items-center justify-center group"
+                className="w-[14px] h-[14px] rounded-full bg-red-500 hover:bg-red-600 transition-all flex items-center justify-center group"
                 title="关闭"
               >
-                <X className="w-2 h-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <svg className="w-2 h-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M1 1l6 6M7 1l-6 6" />
+                </svg>
               </button>
               <button
                 onClick={() => window.electronAPI.app.minimize()}
-                className="w-3 h-3 rounded-full bg-yellow-500 hover:brightness-110 transition-all flex items-center justify-center group"
+                className="w-[14px] h-[14px] rounded-full bg-yellow-500 hover:bg-yellow-600 transition-all flex items-center justify-center group"
                 title="最小化"
               >
-                <Minus className="w-2 h-2 text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <svg className="w-2 h-2 text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M2 4h4" />
+                </svg>
               </button>
               <button
                 onClick={() => window.electronAPI.app.maximize()}
-                className="w-3 h-3 rounded-full bg-green-500 hover:brightness-110 transition-all flex items-center justify-center group"
+                className="w-[14px] h-[14px] rounded-full bg-green-500 hover:bg-green-600 transition-all flex items-center justify-center group"
                 title="最大化"
               >
                 {isMaximized ? (
-                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="3" y="5" width="9" height="9" rx="1" />
-                    <path d="M12 5V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v1" />
+                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="1.5" y="2.5" width="4.5" height="4.5" rx="0.5" />
+                    <path d="M6 2.5V2a1 1 0 0 0-1-1H2.5" />
                   </svg>
                 ) : (
-                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="2" y="2" width="12" height="12" rx="1.5" />
+                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="1" y="1" width="6" height="6" rx="1" />
                   </svg>
                 )}
               </button>

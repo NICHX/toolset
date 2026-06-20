@@ -500,40 +500,40 @@ app.whenReady().then(async () => {
   ipcMain.handle('plugin:install-unified', async () => {
     if (!mainWindow) return { success: false, error: '主窗口未就绪' }
 
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择插件包（支持 .plugin.zip / .zip 文件和目录）',
-      filters: [
-        { name: '插件包', extensions: ['zip'] },
-      ],
-      properties: ['openFile', 'openDirectory'],
+    // 先询问安装来源类型（Windows 上 openFile + openDirectory 同时使用会导致文件不可选）
+    const choiceResult = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: '安装插件',
+      message: '请选择安装来源',
+      buttons: ['从 ZIP 文件安装', '从插件目录安装', '取消'],
+      defaultId: 0,
+      cancelId: 2,
     })
 
-    if (result.canceled || result.filePaths.length === 0) {
+    if (choiceResult.response === 2) {
       return { success: false, error: '用户取消' }
     }
 
-    const selectedPath = result.filePaths[0]
-    const stat = fs.statSync(selectedPath)
+    const isFileInstall = choiceResult.response === 0
 
-    // 根据文件/目录获取包含 plugin.json 的源目录
-    let pluginSourceDir: string
+    if (isFileInstall) {
+      // 文件安装：选择 ZIP 文件
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '选择插件包',
+        filters: [{ name: '插件包', extensions: ['zip'] }],
+        properties: ['openFile'],
+      })
 
-    if (stat.isDirectory()) {
-      // 目录安装：直接查找 plugin.json
-      const manifestPath = path.join(selectedPath, 'plugin.json')
-      if (!fs.existsSync(manifestPath)) {
-        return { success: false, error: '所选目录中未找到 plugin.json' }
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, error: '用户取消' }
       }
-      const validation = validatePluginDir(selectedPath)
-      if (!validation.valid) {
-        return { success: false, error: validation.error }
-      }
-      pluginSourceDir = selectedPath
-    } else {
-      // 文件安装：解压 ZIP 到临时目录
+
+      const filePath = result.filePaths[0]
+
+      // 解压到临时目录（try-finally 确保清理）
       const tempDir = path.join(app.getPath('temp'), `plugin-install-${Date.now()}`)
       try {
-        const zip = new AdmZip(selectedPath)
+        const zip = new AdmZip(filePath)
         extractZipSafely(zip, tempDir)
 
         const findManifest = (dir: string): string | null => {
@@ -554,34 +554,21 @@ app.whenReady().then(async () => {
           return { success: false, error: '插件包中未找到 plugin.json' }
         }
 
-        const validation = validatePluginDir(path.dirname(manifestPath))
+        const pluginSourceDir = path.dirname(manifestPath)
+        const validation = validatePluginDir(pluginSourceDir)
         if (!validation.valid) {
           return { success: false, error: validation.error }
         }
 
-        pluginSourceDir = path.dirname(manifestPath)
-      } catch {
-        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
-        return { success: false, error: '解压插件包失败' }
-      }
-
-      // 注册清理（正常和异常路径都要确保清理）
-      const cleanupTemp = () => {
-        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
-      }
-
-      try {
-        // 弹出安装确认对话框
-        const confirmed = await confirmPluginInstall(mainWindow, path.join(pluginSourceDir, 'plugin.json'))
-        if (!confirmed) { cleanupTemp(); return { success: false, error: '用户取消' } }
+        const confirmed = await confirmPluginInstall(mainWindow, manifestPath)
+        if (!confirmed) return { success: false, error: '用户取消' }
 
         let pluginId: string
         try {
-          const raw = fs.readFileSync(path.join(pluginSourceDir, 'plugin.json'), 'utf-8')
+          const raw = fs.readFileSync(manifestPath, 'utf-8')
           pluginId = JSON.parse(raw).id
           if (!pluginId) throw new Error('插件 ID 为空')
         } catch (e) {
-          cleanupTemp()
           return { success: false, error: `无效的 plugin.json: ${(e as Error).message}` }
         }
 
@@ -589,58 +576,70 @@ app.whenReady().then(async () => {
           fs.mkdirSync(pluginsDir, { recursive: true })
         }
         const targetPath = path.join(pluginsDir, pluginId)
-
         const copyResult = replacePluginDirPreservingConfig(targetPath, pluginSourceDir)
-        if (!copyResult.success) { cleanupTemp(); return copyResult }
+        if (!copyResult.success) return copyResult
 
-        logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${selectedPath}`)
+        logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${filePath}`)
 
         try {
           pluginLoader.removePlugin(pluginId)
-          pluginLoader.loadSingle(pluginsDir, pluginId)
+          await pluginLoader.loadSingle(pluginsDir, pluginId)
           pluginLoader.triggerInstall(pluginId)
           eventBus.emit(SYSTEM_EVENTS.PLUGIN_INSTALLED, { pluginId })
           logger.info('Plugin Install', `Loaded plugin "${pluginId}"`)
         } catch (e) {
-          cleanupTemp()
           return { success: false, error: `加载插件失败: ${(e as Error).message}` }
         }
 
-        cleanupTemp()
         return { success: true }
-      } catch {
-        cleanupTemp()
-        return { success: false, error: '安装过程中发生错误' }
+      } finally {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
       }
-    }
+    } else {
+      // 目录安装：选择插件目录
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '选择插件目录',
+        properties: ['openDirectory'],
+      })
 
-    // 目录安装的后续流程
-    try {
-      const confirmed = await confirmPluginInstall(mainWindow, path.join(pluginSourceDir, 'plugin.json'))
-      if (!confirmed) return { success: false, error: '用户取消' }
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, error: '用户取消' }
+      }
+
+      const sourcePath = result.filePaths[0]
+
+      const validation = validatePluginDir(sourcePath)
+      if (!validation.valid) {
+        return { success: false, error: validation.error }
+      }
 
       let pluginId: string
       try {
-        const raw = fs.readFileSync(path.join(pluginSourceDir, 'plugin.json'), 'utf-8')
+        const raw = fs.readFileSync(path.join(sourcePath, 'plugin.json'), 'utf-8')
         pluginId = JSON.parse(raw).id
-        if (!pluginId) throw new Error('插件 ID 为空')
       } catch (e) {
         return { success: false, error: `无效的 plugin.json: ${(e as Error).message}` }
       }
 
+      const confirmed = await confirmPluginInstall(mainWindow, path.join(sourcePath, 'plugin.json'))
+      if (!confirmed) return { success: false, error: '用户取消' }
+
       if (!fs.existsSync(pluginsDir)) {
         fs.mkdirSync(pluginsDir, { recursive: true })
+      } else if (!fs.statSync(pluginsDir).isDirectory()) {
+        fs.rmSync(pluginsDir, { recursive: true, force: true })
+        fs.mkdirSync(pluginsDir, { recursive: true })
       }
-      const targetPath = path.join(pluginsDir, pluginId)
 
-      const copyResult = replacePluginDirPreservingConfig(targetPath, pluginSourceDir)
+      const targetPath = path.join(pluginsDir, pluginId)
+      const copyResult = replacePluginDirPreservingConfig(targetPath, sourcePath)
       if (!copyResult.success) return copyResult
 
-      logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${selectedPath}`)
+      logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${sourcePath}`)
 
       try {
         pluginLoader.removePlugin(pluginId)
-        pluginLoader.loadSingle(pluginsDir, pluginId)
+        await pluginLoader.loadSingle(pluginsDir, pluginId)
         pluginLoader.triggerInstall(pluginId)
         eventBus.emit(SYSTEM_EVENTS.PLUGIN_INSTALLED, { pluginId })
         logger.info('Plugin Install', `Loaded plugin "${pluginId}"`)
@@ -649,8 +648,6 @@ app.whenReady().then(async () => {
       }
 
       return { success: true }
-    } catch (e) {
-      return { success: false, error: `安装过程中发生错误: ${(e as Error).message}` }
     }
   })
 
