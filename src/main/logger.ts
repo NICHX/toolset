@@ -70,6 +70,11 @@ class FileLogger {
     this.logFile = path.join(this.logDir, `toolset-${dateStr}.log`)
     try {
       this.stream = fs.createWriteStream(this.logFile, { flags: 'a' })
+      this.stream.on('error', (err) => {
+        console.error('[Logger] Stream error:', err.message)
+        this.stream = null
+        this.initialized = false
+      })
       this.initialized = true
       this.cleanOldLogs()
       this.write('INFO', 'Logger', `Log file: ${this.logFile}`)
@@ -78,6 +83,11 @@ class FileLogger {
       try {
         fs.rmSync(this.logFile, { force: true })
         this.stream = fs.createWriteStream(this.logFile, { flags: 'a' })
+        this.stream.on('error', (err) => {
+          console.error('[Logger] Stream error:', err.message)
+          this.stream = null
+          this.initialized = false
+        })
         this.initialized = true
         this.cleanOldLogs()
         this.write('INFO', 'Logger', `Log file re-created: ${this.logFile}`)
