@@ -26,6 +26,7 @@ module.exports = {
     extend: {
       colors: {
         primary: {
+          DEFAULT: 'var(--primary)',
           50: 'var(--primary-50)',
           100: 'var(--primary-100)',
           200: 'var(--primary-200)',
@@ -37,18 +38,34 @@ module.exports = {
           800: 'var(--primary-800)',
           900: 'var(--primary-900)',
           950: 'var(--primary-950)',
+          foreground: '#fff',
         },
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
+        'fade-out': 'fadeOut 0.2s ease-out',
+        'zoom-in': 'zoomIn 0.2s ease-out',
+        'zoom-out': 'zoomOut 0.2s ease-out',
       },
       keyframes: {
         fadeIn: {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        fadeOut: {
+          '0%': { opacity: '1' },
+          '100%': { opacity: '0' },
+        },
+        zoomIn: {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        zoomOut: {
+          '0%': { opacity: '1', transform: 'scale(1)' },
+          '100%': { opacity: '0', transform: 'scale(0.95)' },
+        },
       },
     },
   },
-  plugins: [],
+  plugins: [require('tailwindcss-animate')],
 }

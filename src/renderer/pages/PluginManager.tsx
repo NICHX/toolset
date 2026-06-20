@@ -1,10 +1,9 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Puzzle, Trash2, Bell, RefreshCw, ArrowUpCircle, GitBranch, ChevronRight, ChevronDown, AlertTriangle, CheckCircle, PackagePlus } from 'lucide-react'
+import { Puzzle, Trash2, Bell, RefreshCw, ArrowUpCircle, GitBranch, ChevronRight, ChevronDown, AlertTriangle, CheckCircle, PackagePlus, X } from 'lucide-react'
 import { usePluginStore } from '../stores/pluginStore'
 import { useToastStore } from '../stores/toastStore'
-import type { PluginUpdateInfo } from '../../shared/types'
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Bell, Puzzle, LayoutDashboard: Bell, ListTodo: Puzzle, History: Bell, Settings: Bell,
@@ -14,7 +13,6 @@ export default function PluginManagerPage() {
   const { plugins, loading, loadPlugins, togglePlugin, installPlugin, uninstallPlugin, checkPluginUpdate, updatePlugin } = usePluginStore()
   const [installing, setInstalling] = useState(false)
   const [updating, setUpdating] = useState(false)
-  const [updateConfirm, setUpdateConfirm] = useState<PluginUpdateInfo & { packagePath: string } | null>(null)
   const [depModalOpen, setDepModalOpen] = useState(false)
   const [depLoading, setDepLoading] = useState(false)
   const [depResults, setDepResults] = useState<Map<string, { resolved: any; errors: string[] }>>(new Map())
@@ -44,9 +42,15 @@ export default function PluginManagerPage() {
   }
 
   const handleUninstall = async (pluginId: string, pluginName: string) => {
-    if (!window.confirm(`确定要卸载插件「${pluginName}」吗？\n\n卸载将删除该插件的所有文件，此操作不可撤销。`)) {
-      return
-    }
+    const { response } = await window.electronAPI.dialog.showMessageBox({
+      type: 'warning',
+      title: '卸载插件',
+      message: `确定要卸载插件「${pluginName}」吗？`,
+      detail: '卸载将删除该插件的所有文件，此操作不可撤销。',
+      buttons: ['取消', '卸载'],
+      cancelId: 0,
+    })
+    if (response !== 1) return
     const result = await uninstallPlugin(pluginId)
     if (result.success) {
       showToast(`已卸载 ${pluginName}`)
@@ -66,26 +70,26 @@ export default function PluginManagerPage() {
     try {
       const result = await checkPluginUpdate()
       if (result.success && result.updateInfo && result.packagePath) {
-        setUpdateConfirm({ ...result.updateInfo, packagePath: result.packagePath })
+        setUpdating(false)
+        const info = { ...result.updateInfo, packagePath: result.packagePath }
+        const { response } = await window.electronAPI.dialog.showMessageBox({
+          type: 'info',
+          title: '确认更新插件',
+          message: `将更新「${info.pluginName}」从 v${info.currentVersion} 到 v${info.newVersion}`,
+          detail: info.newDescription || undefined,
+          buttons: ['取消', '确认更新'],
+          cancelId: 0,
+        })
+        if (response !== 1) return
+        setUpdating(true)
+        const updateResult = await updatePlugin(info.pluginId, info.packagePath)
+        if (updateResult.success) {
+          showToast(`插件「${info.pluginName}」已更新至 v${info.newVersion}`)
+        } else {
+          showToast(updateResult.error || '更新失败', 'error')
+        }
       } else if (result.error && result.error !== '已取消') {
         showToast(result.error, 'error')
-      }
-    } finally {
-      setUpdating(false)
-    }
-  }
-
-  /** 确认执行更新 */
-  const handleConfirmUpdate = async () => {
-    if (!updateConfirm) return
-    setUpdating(true)
-    setUpdateConfirm(null)
-    try {
-      const result = await updatePlugin(updateConfirm.pluginId, updateConfirm.packagePath)
-      if (result.success) {
-        showToast(`插件「${updateConfirm.pluginName}」已更新至 v${updateConfirm.newVersion}`)
-      } else {
-        showToast(result.error || '更新失败', 'error')
       }
     } finally {
       setUpdating(false)
@@ -289,65 +293,29 @@ export default function PluginManagerPage() {
         </div>
       )}
 
-      {/* 更新确认弹窗 */}
-      {updateConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200/80 dark:border-slate-800/50 p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-2">确认更新插件</h3>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-              将更新「{updateConfirm.pluginName}」从 v{updateConfirm.currentVersion} 到 v{updateConfirm.newVersion}
-            </p>
-            {updateConfirm.newDescription && (
-              <div className="mb-4 p-3 bg-gray-50 dark:bg-slate-800/60 rounded-xl">
-                <p className="text-xs text-gray-500 dark:text-slate-400 mb-1 font-medium">新版本描述：</p>
-                <p className="text-sm text-gray-700 dark:text-slate-300">{updateConfirm.newDescription}</p>
-              </div>
-            )}
-            <p className="text-xs text-gray-400 dark:text-slate-500 mb-5">
-              更新将保留插件现有配置，此操作可撤销（需重新安装旧版本）。
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setUpdateConfirm(null)}
-                className="btn-ghost px-4 py-2 text-sm"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleConfirmUpdate}
-                disabled={updating}
-                className="btn-primary px-4 py-2 text-sm flex items-center gap-2"
-              >
-                {updating && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                确认更新
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 依赖检查弹窗 */}
       {depModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200/80 dark:border-slate-800/50 p-6 max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100">插件依赖状态</h3>
+        <>
+          <div className="fixed inset-0 z-50 bg-black/80" />
+          <div className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-2xl translate-x-[-50%] translate-y-[-50%] gap-4 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-6 shadow-lg sm:rounded-lg max-h-[85vh]">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold leading-none tracking-tight text-slate-900 dark:text-slate-100">插件依赖状态</h3>
               <button
                 onClick={() => setDepModalOpen(false)}
-                className="btn-ghost p-1.5 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
+                className="rounded-sm opacity-70 ring-offset-white dark:ring-offset-slate-950 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-2 text-slate-500 dark:text-slate-400"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 
             {depLoading ? (
               <div className="flex items-center justify-center py-12">
-                <RefreshCw className="w-6 h-6 text-gray-400 dark:text-slate-500 animate-spin" />
+                <RefreshCw className="w-6 h-6 text-slate-500 dark:text-slate-400 animate-spin" />
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto space-y-2">
+              <div className="overflow-y-auto max-h-[60vh] space-y-2">
                 {depErrors.length > 0 && (
-                  <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-xl mb-4">
+                  <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
                     <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-1">
                       发现 {depErrors.length} 个插件存在依赖问题
                     </p>
@@ -357,12 +325,12 @@ export default function PluginManagerPage() {
                   </div>
                 )}
                 {depErrors.length === 0 && depResults.size === 0 && (
-                  <div className="text-center py-8 text-sm text-gray-500 dark:text-slate-400">
+                  <div className="text-center py-8 text-sm text-slate-500 dark:text-slate-400">
                     所有插件均无依赖声明
                   </div>
                 )}
                 {depErrors.length === 0 && depResults.size > 0 && (
-                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl mb-4">
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
                     <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                       所有插件依赖已满足 ✓
                     </p>
@@ -377,18 +345,18 @@ export default function PluginManagerPage() {
                   const isExpanded = expandedPlugins.has(pluginId)
 
                   return (
-                    <div key={pluginId} className="glass-card overflow-hidden">
+                    <div key={pluginId} className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
                       <button
                         onClick={() => togglePluginExpanded(pluginId)}
-                        className="w-full flex items-center gap-2 p-3 text-left hover:bg-gray-50 dark:hover:bg-slate-800/40 transition-colors"
+                        className="w-full flex items-center gap-2 p-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
                       >
                         {isExpanded ? (
-                          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <ChevronDown className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
                         ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <ChevronRight className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
                         )}
-                        <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{pluginName}</span>
-                        <span className="text-xs text-gray-400 dark:text-slate-500">({plugin?.version})</span>
+                        <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{pluginName}</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">({plugin?.version})</span>
                         {hasError ? (
                           <AlertTriangle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />
                         ) : (
@@ -408,7 +376,7 @@ export default function PluginManagerPage() {
                               </div>
                             ))}
                           {/* 渲染依赖树 */}
-                          <div className="mt-2 border-l-2 border-gray-200 dark:border-slate-700 pl-2">
+                          <div className="mt-2 border-l-2 border-slate-200 dark:border-slate-700 pl-2">
                             {renderDepNode(result.resolved, 0)}
                           </div>
                         </div>
@@ -419,7 +387,7 @@ export default function PluginManagerPage() {
               </div>
             )}
           </div>
-        </div>
+        </>
       )}
     </div>
   )

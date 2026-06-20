@@ -4,6 +4,7 @@ import { type ReactNode, useState, useEffect, useRef } from 'react'
 import { Bell, X, Search, Sparkles, Puzzle, Settings } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { PluginManifest } from '../../../shared/types'
+import ToastContainer from '../ToastContainer'
 
 interface AppLayoutProps {
   children: ReactNode
@@ -121,18 +122,14 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
   const activePlugin = activePluginId ? plugins.find((p) => p.id === activePluginId && p.enabled) : null
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-color)' }}>
+    <>
+      <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-color)' }}>
 
       <aside className="w-56 flex-shrink-0 surface-sidebar border-r border-gray-200/80 dark:border-slate-800/50 flex flex-col transition-all duration-300">
         {/* Windows 窗口控制按钮 — 集成在侧边栏顶部 */}
         <div className={cn("flex flex-col", needsWinControls ? "pt-0" : "pt-[38px]")} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
           {needsWinControls && (
-            <div className="flex items-center justify-between h-[38px] pl-3 pr-1 border-b border-gray-200/80 dark:border-slate-800/50 bg-gray-50/80 dark:bg-slate-900/80" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-              {/* 窗口标题 */}
-              <span className="text-xs text-gray-500 dark:text-slate-500 select-none" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-                工具集
-              </span>
-              {/* 窗口控制按钮组 — Windows 风格，从右侧排列 */}
+            <div className="flex items-center justify-end h-[38px] pr-1 border-b border-gray-200/80 dark:border-slate-800/50 bg-gray-50/80 dark:bg-slate-900/80" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
               <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                 {/* 最小化 */}
                 <button
@@ -278,10 +275,10 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
         <div className="px-5 py-4 border-t border-gray-200/80 dark:border-slate-800/50">
           {(onHomePage || currentPage.startsWith('_system:')) ? (
             <p className="text-xs text-gray-400 dark:text-slate-600">
-              {onHomePage ? '选择一个工具开始使用' : '工具集 v1.0.0'}
+              {onHomePage ? '选择一个工具开始使用' : '工具集 v1.0.2'}
             </p>
           ) : (
-            <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.0</p>
+            <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.2</p>
           )}
         </div>
       </aside>
@@ -357,11 +354,12 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
           </header>
         )}
 
-        <div className={cn('flex-1 overflow-auto', onHomePage ? 'p-0' : 'p-6')}>
+        <div className={cn('flex-1 overflow-auto min-h-0', onHomePage ? 'p-0' : 'p-6')}>
           <div
             className={cn(
               onHomePage ? '' : 'animate-fade-in',
-              activePluginId && `plugin-${activePluginId}`
+              activePluginId && `plugin-${activePluginId}`,
+              !onHomePage && 'h-full'
             )}
             data-plugin={activePluginId || undefined}
           >
@@ -370,5 +368,6 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
         </div>
       </main>
     </div>
+    </>
   )
 }

@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import {
-  Sparkles, ArrowRight, Bell, Activity, Pause, Clock,
+  Sparkles, ArrowRight, Bell,
   Puzzle, FolderOpen, Settings as SettingsIcon, Layers, Grid3X3,
+  Cpu, HardDrive, CheckCircle, XCircle,
 } from 'lucide-react'
 import { usePluginStore } from '../stores/pluginStore'
 import { useToastStore } from '../stores/toastStore'
-import { cn } from '../lib/utils'
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Sparkles, Puzzle, Settings: SettingsIcon, Bell,
@@ -29,24 +29,22 @@ export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
   }, [loadPlugins])
 
   const enabledPlugins = plugins.filter((p) => p.enabled && p.id !== '_system')
-  const hasReminder = enabledPlugins.some((p) => p.id === 'reminder')
+  const disabledPlugins = plugins.filter((p) => !p.enabled && p.id !== '_system')
+  const totalPlugins = enabledPlugins.length + disabledPlugins.length
 
-  const [taskStats, setTaskStats] = useState({ active: 0, paused: 0, total: 0 })
+  const [systemStats, setSystemStats] = useState<{ cpuPercent: number; memoryMB: number } | null>(null)
 
   useEffect(() => {
-    if (!hasReminder) return
     const loadStats = async () => {
       try {
-        const tasks = await window.electronAPI.plugin.invoke('reminder:task-get-all')
-        setTaskStats({
-          active: tasks.filter((t: any) => t.enabled).length,
-          paused: tasks.filter((t: any) => !t.enabled).length,
-          total: tasks.length,
-        })
+        const stats = await window.electronAPI.perf.getOverall()
+        setSystemStats(stats)
       } catch { /* ignore */ }
     }
     loadStats()
-  }, [hasReminder])
+    const timer = setInterval(loadStats, 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     useToastStore.getState().addToast(message, type)
@@ -95,28 +93,45 @@ export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
       </div>
 
       <div className="px-8 pb-10 space-y-8">
-        {hasReminder && taskStats.total > 0 && (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
-              <Activity className="w-4 h-4 text-emerald-400" />
-              <span className="text-sm text-gray-600 dark:text-slate-300">
-                <span className="font-semibold text-gray-900 dark:text-slate-100">{taskStats.active}</span> 运行中
-              </span>
-            </div>
-            <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
-              <Pause className="w-4 h-4 text-violet-400" />
-              <span className="text-sm text-gray-600 dark:text-slate-300">
-                <span className="font-semibold text-gray-900 dark:text-slate-100">{taskStats.paused}</span> 已暂停
-              </span>
-            </div>
-            <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
-              <Clock className="w-4 h-4 text-amber-400" />
-              <span className="text-sm text-gray-600 dark:text-slate-300">
-                <span className="font-semibold text-gray-900 dark:text-slate-100">{taskStats.total}</span> 总任务
-              </span>
-            </div>
+        {/* 工具集概览统计 */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm text-gray-600 dark:text-slate-300">
+              <span className="font-semibold text-gray-900 dark:text-slate-100">{enabledPlugins.length}</span> 已启用
+            </span>
           </div>
-        )}
+          {disabledPlugins.length > 0 && (
+            <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
+              <XCircle className="w-4 h-4 text-slate-400" />
+              <span className="text-sm text-gray-600 dark:text-slate-300">
+                <span className="font-semibold text-gray-900 dark:text-slate-100">{disabledPlugins.length}</span> 已禁用
+              </span>
+            </div>
+          )}
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
+            <Layers className="w-4 h-4 text-primary-400" />
+            <span className="text-sm text-gray-600 dark:text-slate-300">
+              <span className="font-semibold text-gray-900 dark:text-slate-100">{totalPlugins}</span> 总插件
+            </span>
+          </div>
+          {systemStats && (
+            <>
+              <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
+                <Cpu className="w-4 h-4 text-cyan-400" />
+                <span className="text-sm text-gray-600 dark:text-slate-300">
+                  <span className="font-semibold text-gray-900 dark:text-slate-100">{systemStats.cpuPercent.toFixed(1)}%</span> CPU
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40">
+                <HardDrive className="w-4 h-4 text-rose-400" />
+                <span className="text-sm text-gray-600 dark:text-slate-300">
+                  <span className="font-semibold text-gray-900 dark:text-slate-100">{systemStats.memoryMB.toFixed(0)}</span> MB
+                </span>
+              </div>
+            </>
+          )}
+        </div>
 
         <section>
           <div className="flex items-center justify-between mb-4">
@@ -158,19 +173,9 @@ export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
                     onClick={() => onNavigate(pageKey)}
                     className="group relative p-5 rounded-2xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40 hover:border-primary-400/50 dark:hover:border-primary-500/40 hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-200 text-left"
                   >
-                    <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${plugin.color} flex items-center justify-center mb-3.5 group-hover:scale-110 transition-transform duration-200 relative`}>
+                    <div className="absolute top-3 right-3 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 shadow-sm" />
+                    <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${plugin.color} flex items-center justify-center mb-3.5 group-hover:scale-110 transition-transform duration-200`}>
                       <Icon className="w-5 h-5 text-white" />
-                      <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900"
-                        style={{
-                          backgroundColor: plugin.id === 'reminder'
-                            ? taskStats.active > 0
-                              ? '#22c55e'
-                              : taskStats.total > 0
-                                ? '#eab308'
-                                : '#ef4444'
-                            : '#22c55e'
-                        }}
-                      />
                     </div>
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">{plugin.name}</h3>
                     <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed line-clamp-2">{plugin.description}</p>
@@ -252,7 +257,7 @@ export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
         </section>
 
         <div className="text-center pt-4 pb-2">
-          <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.0</p>
+          <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.2</p>
         </div>
       </div>
     </div>

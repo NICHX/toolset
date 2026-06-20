@@ -18,6 +18,28 @@ import { AppConfig } from './app-config'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+
+// ========== 原生弹窗辅助（使用 dialog.showMessageBox） ==========
+async function showMessageBox(options: {
+  type?: 'info' | 'question' | 'warning' | 'error'
+  title: string
+  message: string
+  detail?: string
+  buttons: string[]
+  cancelId?: number
+}): Promise<number> {
+  if (!mainWindow) return options.cancelId ?? 0
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: options.type,
+    title: options.title,
+    message: options.message,
+    detail: options.detail,
+    buttons: options.buttons,
+    cancelId: options.cancelId ?? 0,
+  })
+  return result.response
+}
+
 let pluginsDir = ''
 let pluginRegistry: PluginRegistry
 let shortcutManager: ShortcutManager
@@ -120,6 +142,12 @@ function setupGenericIpcHandlers() {
 
   ipcMain.handle('theme:save-config', (_event, config) => {
     saveThemeConfig(config)
+  })
+
+  // 渲染进程调用原生弹窗
+  ipcMain.handle('dialog:show-message-box', async (_event, options) => {
+    if (!mainWindow) return { response: -1 }
+    return await dialog.showMessageBox(mainWindow, options)
   })
 }
 
@@ -239,16 +267,14 @@ async function confirmPluginInstall(mainWindow: BrowserWindow, manifestPath: str
     manifest.builtIn ? '\n此插件为内置插件。' : '',
   ].filter(Boolean).join('\n')
 
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: 'info',
+  const result = await showMessageBox({
     title: '安装插件',
     message: `${manifest.name}  v${manifest.version}`,
     detail,
     buttons: ['取消', '确认安装'],
-    defaultId: 1,
-    cancelId: 0,
+    type: 'info',
   })
-  return result.response === 1
+  return result === 1
 }
 
 // Plugin loader
@@ -500,21 +526,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('plugin:install-unified', async () => {
     if (!mainWindow) return { success: false, error: '主窗口未就绪' }
 
-    // 先询问安装来源类型（Windows 上 openFile + openDirectory 同时使用会导致文件不可选）
-    const choiceResult = await dialog.showMessageBox(mainWindow, {
-      type: 'question',
+    // 选择安装来源类型
+    const choiceResult = await showMessageBox({
       title: '安装插件',
       message: '请选择安装来源',
+      detail: '从 ZIP 文件安装：本地已下载的插件压缩包\n从插件目录安装：本地已解压的插件文件夹',
       buttons: ['从 ZIP 文件安装', '从插件目录安装', '取消'],
-      defaultId: 0,
       cancelId: 2,
+      type: 'question',
     })
 
-    if (choiceResult.response === 2) {
+    if (choiceResult === 2) {
       return { success: false, error: '用户取消' }
     }
 
-    const isFileInstall = choiceResult.response === 0
+    const isFileInstall = choiceResult === 0
 
     if (isFileInstall) {
       // 文件安装：选择 ZIP 文件
@@ -961,15 +987,13 @@ app.whenReady().then(async () => {
     const resolved = path.resolve(newDir)
     if (!fs.existsSync(resolved)) {
       // 目录不存在时询问是否创建
-      const confirmResult = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
+      const confirmResult = await showMessageBox({
         title: '创建目录',
         message: `目录 "${resolved}" 不存在，是否创建？`,
         buttons: ['取消', '创建'],
-        defaultId: 1,
-        cancelId: 0,
+        type: 'question',
       })
-      if (confirmResult.response === 0) {
+      if (confirmResult === 0) {
         return { success: false, error: '用户取消' }
       }
       try {
@@ -992,16 +1016,14 @@ app.whenReady().then(async () => {
       const entries = fs.readdirSync(oldDir, { withFileTypes: true })
       const hasPlugins = entries.some((e) => e.isDirectory())
       if (hasPlugins) {
-        const migrateResult = await dialog.showMessageBox(mainWindow, {
-          type: 'question',
+        const migrateResult = await showMessageBox({
           title: '迁移插件',
           message: '检测到旧插件目录中有已安装的插件，是否将其迁移到新目录？',
           detail: `从: ${oldDir}\n到: ${resolved}`,
           buttons: ['不迁移', '迁移'],
-          defaultId: 1,
-          cancelId: 0,
+          type: 'question',
         })
-        if (migrateResult.response === 1) {
+        if (migrateResult === 1) {
           try {
             copyRecursiveSync(oldDir, resolved)
             logger.info('PluginDir', `Migrated plugins from ${oldDir} to ${resolved}`)

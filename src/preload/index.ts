@@ -168,6 +168,12 @@ const api = {
       ipcRenderer.invoke('config-backup:collect') as Promise<Array<{ id: string; name: string; version: string }>>,
   },
 
+  // ========== 原生弹窗 API ==========
+  dialog: {
+    showMessageBox: (options: { type?: 'info' | 'question' | 'warning' | 'error'; title: string; message: string; detail?: string; buttons: string[]; cancelId?: number }) =>
+      ipcRenderer.invoke('dialog:show-message-box', options) as Promise<Electron.MessageBoxReturnValue>,
+  },
+
   // ========== 插件目录配置 API ==========
   pluginDir: {
     get: () =>
