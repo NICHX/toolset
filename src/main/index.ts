@@ -280,9 +280,10 @@ async function confirmPluginInstall(mainWindow: BrowserWindow, manifestPath: str
 // Plugin loader
 const pluginLoader = new PluginLoader()
 
-// 注册自定义 plugin:// 协议（必须在 app.whenReady 前调用）
+// 注册自定义协议（必须在 app.whenReady 前调用）
 protocol.registerSchemesAsPrivileged([
   { scheme: 'plugin', privileges: { supportFetchAPI: true, bypassCSP: true, stream: true } },
+  { scheme: 'media-file', privileges: { supportFetchAPI: true, bypassCSP: true, stream: true } },
 ])
 
 app.whenReady().then(async () => {
