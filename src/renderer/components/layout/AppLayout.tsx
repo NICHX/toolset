@@ -133,42 +133,42 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
                 工具集
               </span>
               {/* 窗口控制按钮组 — Windows 风格，从右侧排列 */}
-              <div className="flex items-center -mr-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                 {/* 最小化 */}
                 <button
                   onClick={() => window.electronAPI.app.minimize()}
-                  className="w-[46px] h-[32px] flex items-center justify-center hover:bg-gray-200/60 dark:hover:bg-slate-700/60 transition-colors active:bg-gray-300/60 dark:active:bg-slate-600/60 group"
+                  className="w-11 h-8 flex items-center justify-center text-gray-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15 transition-colors rounded-sm"
                   title="最小化"
                 >
-                  <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M2 5h6" />
+                  <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+                    <path d="M2.5 6h7" />
                   </svg>
                 </button>
                 {/* 最大化/还原 */}
                 <button
                   onClick={() => window.electronAPI.app.maximize()}
-                  className="w-[46px] h-[32px] flex items-center justify-center hover:bg-gray-200/60 dark:hover:bg-slate-700/60 transition-colors active:bg-gray-300/60 dark:active:bg-slate-600/60 group"
+                  className="w-11 h-8 flex items-center justify-center text-gray-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15 transition-colors rounded-sm"
                   title={isMaximized ? '还原' : '最大化'}
                 >
                   {isMaximized ? (
-                    <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <rect x="1.5" y="3.5" width="5" height="5" rx="0.5" />
-                      <path d="M7.5 3.5V2a1 1 0 0 0-1-1H2.5" />
+                    <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 4.5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1.5" />
+                      <rect x="4.5" y="4.5" width="5" height="5" rx="0.75" />
                     </svg>
                   ) : (
-                    <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
+                    <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
                     </svg>
                   )}
                 </button>
                 {/* 关闭 */}
                 <button
                   onClick={() => window.electronAPI.app.close()}
-                  className="w-[46px] h-[32px] flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors active:bg-red-600 group"
+                  className="w-11 h-8 flex items-center justify-center text-gray-500 dark:text-slate-400 hover:bg-red-500 hover:text-white active:bg-red-600 transition-colors rounded-sm"
                   title="关闭"
                 >
-                  <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400 group-hover:text-white" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M2 2l6 6M8 2l-6 6" />
+                  <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+                    <path d="M3 3l6 6M9 3l-6 6" />
                   </svg>
                 </button>
               </div>
