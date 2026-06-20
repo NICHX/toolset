@@ -1,0 +1,7 @@
+{
+  "name": "@toolsets/shared",
+  "version": "1.0.0",
+  "description": "Shared types for toolset platform and plugins",
+  "main": "index.ts",
+  "types": "index.ts"
+}
