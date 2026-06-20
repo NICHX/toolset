@@ -1,6 +1,6 @@
 {
   "name": "toolset",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "工具集 - 集成多种实用工具的桌面应用",
   "main": "dist/main/index.js",
   "scripts": {
