@@ -58,10 +58,11 @@ vi.mock('../main/logger', () => ({
 }))
 
 const { PluginLoader } = await import('../main/plugin-loader')
+type PluginLoaderType = InstanceType<typeof PluginLoader>
 
 describe('PluginLoader', () => {
   let tmpDir: string
-  let pluginLoader: PluginLoader
+  let pluginLoader: PluginLoaderType
   let registry: PluginRegistry
 
   const createMinimalManifest = (id: string, overrides: Record<string, unknown> = {}) => {
