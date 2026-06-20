@@ -167,6 +167,21 @@ const api = {
     collect: () =>
       ipcRenderer.invoke('config-backup:collect') as Promise<Array<{ id: string; name: string; version: string }>>,
   },
+
+  // ========== 插件目录配置 API ==========
+  pluginDir: {
+    get: () =>
+      ipcRenderer.invoke('plugin-dir:get') as Promise<{ customDir: string; effectiveDir: string; defaultDir: string }>,
+    select: () =>
+      ipcRenderer.invoke('plugin-dir:select') as Promise<{ success: boolean; error?: string; path: string }>,
+    set: (dir: string) =>
+      ipcRenderer.invoke('plugin-dir:set', dir) as Promise<{ success: boolean; error?: string }>,
+    onReloaded: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on('plugins:reloaded', handler)
+      return () => { ipcRenderer.removeListener('plugins:reloaded', handler) }
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

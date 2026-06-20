@@ -122,48 +122,50 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-color)' }}>
-      {/* 非 macOS 窗口控制按钮 — 内嵌在侧边栏顶部 */}
-      {needsWinControls && (
-        <div className="fixed top-0 left-0 z-50 flex items-start gap-1.5 pl-3 pt-3.5">
-          <button
-            onClick={() => window.electronAPI.app.close()}
-            className="w-3 h-3 rounded-full bg-red-500 hover:brightness-110 transition-all flex items-center justify-center group"
-            title="关闭"
-          >
-            <X className="w-2 h-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-          <button
-            onClick={() => window.electronAPI.app.minimize()}
-            className="w-3 h-3 rounded-full bg-yellow-500 hover:brightness-110 transition-all flex items-center justify-center group"
-            title="最小化"
-          >
-            <Minus className="w-2 h-2 text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-          <button
-            onClick={() => window.electronAPI.app.maximize()}
-            className="w-3 h-3 rounded-full bg-green-500 hover:brightness-110 transition-all flex items-center justify-center group"
-            title="最大化"
-          >
-            {isMaximized ? (
-              <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="3" y="5" width="9" height="9" rx="1" />
-                <path d="M12 5V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v1" />
-              </svg>
-            ) : (
-              <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="2" y="2" width="12" height="12" rx="1.5" />
-              </svg>
-            )}
-          </button>
-        </div>
-      )}
 
       <aside className="w-56 flex-shrink-0 surface-sidebar border-r border-gray-200/80 dark:border-slate-800/50 flex flex-col transition-all duration-300">
-        <div className="min-h-14 flex items-center gap-3 px-5 pb-2 border-b border-gray-200/80 dark:border-slate-800/50 pt-[38px]" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <Sparkles className="w-4 h-4 text-white" />
+        {/* Windows 窗口控制按钮 — 集成在侧边栏顶部 */}
+        <div className={cn("flex flex-col", needsWinControls ? "pt-0" : "pt-[38px]")} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+          {needsWinControls && (
+            <div className="flex items-center gap-1.5 pl-3 h-[34px]" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <button
+                onClick={() => window.electronAPI.app.close()}
+                className="w-3 h-3 rounded-full bg-red-500 hover:brightness-110 transition-all flex items-center justify-center group"
+                title="关闭"
+              >
+                <X className="w-2 h-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+              <button
+                onClick={() => window.electronAPI.app.minimize()}
+                className="w-3 h-3 rounded-full bg-yellow-500 hover:brightness-110 transition-all flex items-center justify-center group"
+                title="最小化"
+              >
+                <Minus className="w-2 h-2 text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+              <button
+                onClick={() => window.electronAPI.app.maximize()}
+                className="w-3 h-3 rounded-full bg-green-500 hover:brightness-110 transition-all flex items-center justify-center group"
+                title="最大化"
+              >
+                {isMaximized ? (
+                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="3" y="5" width="9" height="9" rx="1" />
+                    <path d="M12 5V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v1" />
+                  </svg>
+                ) : (
+                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="2" y="2" width="12" height="12" rx="1.5" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          )}
+          <div className="flex items-center gap-3 px-5 pb-2 border-b border-gray-200/80 dark:border-slate-800/50" style={needsWinControls ? { WebkitAppRegion: 'no-drag' } as React.CSSProperties : undefined}>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-semibold text-gray-900 dark:text-slate-100 text-base">工具集</span>
           </div>
-          <span className="font-semibold text-gray-900 dark:text-slate-100 text-base">工具集</span>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">

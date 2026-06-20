@@ -14,6 +14,7 @@ import { SYSTEM_EVENTS } from '../shared/types'
 import { PerformanceMonitor } from './performance-monitor'
 import { checkAllDependencies, resolveDependencies } from './plugin-dependency-resolver'
 import { ConfigBackupManager } from './config-backup'
+import { AppConfig } from './app-config'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -22,6 +23,7 @@ let pluginRegistry: PluginRegistry
 let shortcutManager: ShortcutManager
 let configBackupManager: ConfigBackupManager
 let performanceMonitor: PerformanceMonitor
+const appConfig = new AppConfig()
 
 function resolveAssetPath(relativePath: string): string | undefined {
   const candidates = [
@@ -145,6 +147,21 @@ function copyPluginFiles(src: string, dest: string) {
     const destPath = path.join(dest, entry.name)
     if (entry.isDirectory()) {
       copyPluginFiles(srcPath, destPath)
+    } else {
+      fs.copyFileSync(srcPath, destPath)
+    }
+  }
+}
+
+/** 递归复制整个目录（用于插件迁移，无过滤） */
+function copyRecursiveSync(src: string, dest: string) {
+  fs.mkdirSync(dest, { recursive: true })
+  const entries = fs.readdirSync(src, { withFileTypes: true })
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name)
+    const destPath = path.join(dest, entry.name)
+    if (entry.isDirectory()) {
+      copyRecursiveSync(srcPath, destPath)
     } else {
       fs.copyFileSync(srcPath, destPath)
     }
@@ -292,11 +309,11 @@ app.whenReady().then(async () => {
   if (mainWindow) {
     pluginLoader.setMainWindow(mainWindow)
     // 初始化注册表并注入 PluginLoader
-    pluginsDir = path.join(app.getPath('userData'), 'plugins')
-    pluginRegistry = new PluginRegistry(path.join(app.getPath('userData'), 'plugins'))
+    pluginsDir = appConfig.getEffectivePluginsDir()
+    pluginRegistry = new PluginRegistry(pluginsDir)
     pluginLoader.setRegistry(pluginRegistry)
     // 初始化快捷键管理器
-    shortcutManager = new ShortcutManager(path.join(app.getPath('userData'), 'plugins'))
+    shortcutManager = new ShortcutManager(pluginsDir)
     shortcutManager.setMainWindow(mainWindow)
     // 注入到 PluginLoader 上下文
     pluginLoader.setShortcutManager(shortcutManager)
@@ -392,7 +409,7 @@ app.whenReady().then(async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '选择插件包',
       filters: [
-        { name: '插件包', extensions: ['plugin', 'plugin.zip', 'zip'] },
+        { name: '插件包', extensions: ['zip'] },
       ],
       properties: ['openFile'],
     })
@@ -486,7 +503,7 @@ app.whenReady().then(async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '选择插件包（支持 .plugin.zip / .zip 文件和目录）',
       filters: [
-        { name: '插件包', extensions: ['plugin', 'plugin.zip', 'zip'] },
+        { name: '插件包', extensions: ['zip'] },
       ],
       properties: ['openFile', 'openDirectory'],
     })
@@ -644,7 +661,7 @@ app.whenReady().then(async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '选择插件更新包',
       filters: [
-        { name: '插件包', extensions: ['plugin', 'plugin.zip', 'zip'] },
+        { name: '插件包', extensions: ['zip'] },
       ],
       properties: ['openFile'],
     })
@@ -906,6 +923,129 @@ app.whenReady().then(async () => {
   ipcMain.handle('config-backup:collect', () => {
     return configBackupManager.collectPluginConfigs()
   })
+
+  // ========== 插件目录配置 IPC ==========
+
+  ipcMain.handle('plugin-dir:get', () => {
+    return {
+      customDir: appConfig.getCustomPluginsDir(),
+      effectiveDir: appConfig.getEffectivePluginsDir(),
+      defaultDir: path.join(app.getPath('userData'), 'plugins'),
+    }
+  })
+
+  ipcMain.handle('plugin-dir:select', async () => {
+    if (!mainWindow) return { success: false, error: '主窗口未就绪', path: '' }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择插件安装目录',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: '用户取消', path: '' }
+    }
+
+    return { success: true, path: result.filePaths[0] }
+  })
+
+  ipcMain.handle('plugin-dir:set', async (_event, newDir: string) => {
+    if (!mainWindow) return { success: false, error: '主窗口未就绪' }
+
+    // 空字符串表示恢复默认
+    if (!newDir) {
+      appConfig.setCustomPluginsDir('')
+      // 使用新目录重新加载
+      await reloadPlugins()
+      return { success: true }
+    }
+
+    // 校验目录是否有效
+    const resolved = path.resolve(newDir)
+    if (!fs.existsSync(resolved)) {
+      // 目录不存在时询问是否创建
+      const confirmResult = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        title: '创建目录',
+        message: `目录 "${resolved}" 不存在，是否创建？`,
+        buttons: ['取消', '创建'],
+        defaultId: 1,
+        cancelId: 0,
+      })
+      if (confirmResult.response === 0) {
+        return { success: false, error: '用户取消' }
+      }
+      try {
+        fs.mkdirSync(resolved, { recursive: true })
+      } catch (e) {
+        return { success: false, error: `创建目录失败: ${(e as Error).message}` }
+      }
+    }
+
+    if (!fs.statSync(resolved).isDirectory()) {
+      return { success: false, error: '路径不是有效的目录' }
+    }
+
+    // 记录旧目录并更新配置
+    const oldDir = appConfig.getEffectivePluginsDir()
+    appConfig.setCustomPluginsDir(resolved)
+
+    // 如果旧目录存在且有插件，询问是否迁移
+    if (oldDir !== resolved && fs.existsSync(oldDir)) {
+      const entries = fs.readdirSync(oldDir, { withFileTypes: true })
+      const hasPlugins = entries.some((e) => e.isDirectory())
+      if (hasPlugins) {
+        const migrateResult = await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          title: '迁移插件',
+          message: '检测到旧插件目录中有已安装的插件，是否将其迁移到新目录？',
+          detail: `从: ${oldDir}\n到: ${resolved}`,
+          buttons: ['不迁移', '迁移'],
+          defaultId: 1,
+          cancelId: 0,
+        })
+        if (migrateResult.response === 1) {
+          try {
+            copyRecursiveSync(oldDir, resolved)
+            logger.info('PluginDir', `Migrated plugins from ${oldDir} to ${resolved}`)
+          } catch (e) {
+            logger.error('PluginDir', `Migration failed: ${e}`)
+            // 迁移失败不阻止切换，用户可手动复制
+          }
+        }
+      }
+    }
+
+    // 使用新目录重新加载
+    await reloadPlugins()
+
+    return { success: true }
+  })
+
+  async function reloadPlugins() {
+    if (!mainWindow) return
+    const newDir = appConfig.getEffectivePluginsDir()
+    pluginsDir = newDir
+
+    // 重新创建注册表和快捷键管理器
+    pluginRegistry = new PluginRegistry(newDir)
+    pluginLoader.setRegistry(pluginRegistry)
+    shortcutManager = new ShortcutManager(newDir)
+    shortcutManager.setMainWindow(mainWindow)
+    pluginLoader.setShortcutManager(shortcutManager)
+    configBackupManager = new ConfigBackupManager(newDir)
+
+    // 清空并重新加载所有插件
+    pluginLoader.clearAll()
+    pluginLoader.setMainWindow(mainWindow)
+    pluginLoader.setRegistry(pluginRegistry)
+    await pluginLoader.loadAll(newDir)
+
+    // 通知渲染进程
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('plugins:reloaded')
+    }
+  }
 
   // ========== 系统事件桥接（主 → 渲染） ==========
 

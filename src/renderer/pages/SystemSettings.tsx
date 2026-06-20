@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
-import { Moon, Sun, Monitor, Palette, RotateCcw, Bell, Download, Upload, Archive } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Moon, Sun, Monitor, Palette, RotateCcw, Bell, Download, Upload, Archive, Folder, FolderOpen } from 'lucide-react'
 import { useThemeStore } from '../stores/themeStore'
 import { useToastStore } from '../stores/toastStore'
 
@@ -22,6 +22,10 @@ export default function SystemSettings() {
   const [backingUp, setBackingUp] = useState(false)
   const [restoring, setRestoring] = useState(false)
 
+  // 插件目录配置
+  const [pluginDirInfo, setPluginDirInfo] = useState<{ customDir: string; effectiveDir: string; defaultDir: string } | null>(null)
+  const [changingDir, setChangingDir] = useState(false)
+
   const showToast = useToastStore((s) => s.addToast)
 
   useEffect(() => {
@@ -36,6 +40,15 @@ export default function SystemSettings() {
     if (saved !== null) {
       setMinimizeToTray(saved === 'true')
     }
+  }, [])
+
+  // 加载插件目录信息
+  useEffect(() => {
+    window.electronAPI.pluginDir.get().then(setPluginDirInfo)
+    const unsub = window.electronAPI.pluginDir.onReloaded(() => {
+      window.electronAPI.pluginDir.get().then(setPluginDirInfo)
+    })
+    return unsub
   }, [])
 
   const toggleTray = useCallback(() => {
@@ -71,6 +84,42 @@ export default function SystemSettings() {
       }
     } finally {
       setRestoring(false)
+    }
+  }
+
+  const handleChangePluginDir = async () => {
+    if (!pluginDirInfo) return
+    setChangingDir(true)
+    try {
+      const selectResult = await window.electronAPI.pluginDir.select()
+      if (!selectResult.success || !selectResult.path) {
+        if (selectResult.error && selectResult.error !== '用户取消') {
+          showToast(selectResult.error, 'error')
+        }
+        return
+      }
+      const setResult = await window.electronAPI.pluginDir.set(selectResult.path)
+      if (setResult.success) {
+        showToast('插件目录已更改', 'success')
+      } else if (setResult.error && setResult.error !== '用户取消') {
+        showToast(setResult.error, 'error')
+      }
+    } finally {
+      setChangingDir(false)
+    }
+  }
+
+  const handleResetPluginDir = async () => {
+    setChangingDir(true)
+    try {
+      const result = await window.electronAPI.pluginDir.set('')
+      if (result.success) {
+        showToast('已恢复默认插件目录', 'success')
+      } else if (result.error && result.error !== '用户取消') {
+        showToast(result.error, 'error')
+      }
+    } finally {
+      setChangingDir(false)
     }
   }
 
@@ -152,6 +201,61 @@ export default function SystemSettings() {
             </button>
           </label>
         </div>
+      </div>
+
+      {/* 插件目录设置 */}
+      <div className="glass-card p-6">
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+          <FolderOpen className="w-4 h-4 text-primary-400" />
+          插件安装目录
+        </h3>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
+          自定义插件安装目录后，新安装的插件将保存到指定位置。更改目录后会自动重新加载插件。
+        </p>
+
+        {pluginDirInfo ? (
+          <div className="space-y-3">
+            <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <Folder className="w-4 h-4 text-primary-400 flex-shrink-0" />
+                <span className="text-gray-700 dark:text-slate-300 truncate" title={pluginDirInfo.effectiveDir}>
+                  {pluginDirInfo.effectiveDir}
+                </span>
+              </div>
+              {pluginDirInfo.customDir && (
+                <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 ml-6">已自定义目录</p>
+              )}
+              {!pluginDirInfo.customDir && (
+                <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 ml-6">默认目录（用户数据目录）</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleChangePluginDir}
+                disabled={changingDir}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-slate-300 bg-white/50 dark:bg-slate-800/50 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700/50 border border-gray-200 dark:border-slate-700/50 transition-colors disabled:opacity-50"
+              >
+                <FolderOpen className="w-4 h-4" />
+                {changingDir ? '处理中...' : '更改目录'}
+              </button>
+              {pluginDirInfo.customDir && (
+                <button
+                  onClick={handleResetPluginDir}
+                  disabled={changingDir}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-slate-300 bg-white/50 dark:bg-slate-800/50 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700/50 border border-gray-200 dark:border-slate-700/50 transition-colors disabled:opacity-50"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  恢复默认
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-gray-400 dark:text-slate-500">
+            <div className="w-4 h-4 rounded-full border-2 border-gray-300 dark:border-slate-600 border-t-transparent animate-spin" />
+            加载中...
+          </div>
+        )}
       </div>
 
       {/* 插件配置备份/恢复 */}
