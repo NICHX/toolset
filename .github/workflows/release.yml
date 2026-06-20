@@ -52,10 +52,12 @@ jobs:
           - os: macos-latest
             build-script: pack:mac
             artifact-name: toolset-mac
+            artifact-pattern: release/*.dmg
 
           - os: windows-latest
             build-script: pack
             artifact-name: toolset-win
+            artifact-pattern: release/*.exe
 
       fail-fast: false
 
@@ -80,7 +82,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact-name }}
-          path: release/*
+          path: ${{ matrix.artifact-pattern }}
           if-no-files-found: error
 
   release:
