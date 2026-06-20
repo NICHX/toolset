@@ -9,7 +9,7 @@ const rootDir = path.resolve(__dirname, '..')
 // macOS Dock uses ~22% corner ratio, Windows taskbar icons ~8-10%
 // We use 10% — balanced: macOS auto-rounds further, Windows looks native
 const CORNER_RATIO = 0.1
-const ICON_SIZE = 192
+const ICON_SIZE = 256
 const TRAY_SIZE = 16
 
 /**
