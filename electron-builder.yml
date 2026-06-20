@@ -1,11 +1,13 @@
 appId: com.toolset.app
 productName: 工具集
+artifactName: "Toolset-${version}-${arch}.${ext}"
 directories:
   output: release
 files:
   - dist/**/*
   - assets/**/*
 win:
+  artifactName: "Toolset-Setup-${version}.${ext}"
   target:
     - target: nsis
       arch:
