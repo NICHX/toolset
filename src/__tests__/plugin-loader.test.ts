@@ -61,7 +61,7 @@ const { PluginLoader } = await import('../main/plugin-loader')
 
 describe('PluginLoader', () => {
   let tmpDir: string
-  let pluginLoader: PluginLoader
+  let pluginLoader: InstanceType<typeof PluginLoader>
   let registry: PluginRegistry
 
   const createMinimalManifest = (id: string, overrides: Record<string, unknown> = {}) => {

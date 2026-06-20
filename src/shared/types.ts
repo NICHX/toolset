@@ -7,6 +7,8 @@ export type {
   PluginPage,
   PluginMainContext,
   PluginMainEntry,
+  PluginDependency,
+  PluginUpdateInfo,
 } from '@toolsets/shared'
 
 export { SYSTEM_EVENTS } from '@toolsets/shared'

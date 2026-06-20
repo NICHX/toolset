@@ -2,24 +2,16 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { usePluginStore } from './stores/pluginStore'
+import { useThemeStore } from './stores/themeStore'
 import AppLayout from './components/layout/AppLayout'
 import ToolLauncher from './pages/ToolLauncher'
 import PluginManagerPage from './pages/PluginManager'
 import SystemSettings from './pages/SystemSettings'
+import LogViewer from './pages/LogViewer'
+import PerformanceMonitor from './pages/PerformanceMonitor'
 import ToastContainer from './components/ToastContainer'
 import PluginShell from './components/PluginShell'
 import { useToastStore } from './stores/toastStore'
-
-/** 初始化已保存的主题 */
-function initTheme() {
-  const saved = localStorage.getItem('toolset-theme')
-  if (saved === 'light') {
-    document.documentElement.classList.remove('dark')
-  } else {
-    document.documentElement.classList.add('dark')
-  }
-}
-initTheme()
 
 type Page = 'home' | (string & {})
 
@@ -39,6 +31,11 @@ export default function App() {
   const loadPlugins = usePluginStore((s) => s.loadPlugins)
   const plugins = usePluginStore((s) => s.plugins)
   const addToast = useToastStore((s) => s.addToast)
+  const loadThemeConfig = useThemeStore((s) => s.loadConfig)
+
+  useEffect(() => {
+    loadThemeConfig()
+  }, [loadThemeConfig])
 
   useEffect(() => {
     loadPlugins()
@@ -64,6 +61,8 @@ export default function App() {
     if (pluginId === '_system') {
       if (pageId === 'manager') return <PluginManagerPage />
       if (pageId === 'settings') return <SystemSettings />
+      if (pageId === 'logs') return <LogViewer />
+      if (pageId === 'performance') return <PerformanceMonitor />
       return null
     }
 

@@ -62,11 +62,11 @@ export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50/50 to-white dark:from-slate-950 dark:to-slate-900">
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-color)' }}>
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary-500/5 blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-indigo-500/5 blur-3xl" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-primary-500/5 blur-3xl" />
         </div>
 
         <div className="relative px-8 pt-14 pb-10">
@@ -197,8 +197,8 @@ export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
               className="group p-5 rounded-2xl bg-white/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/40 hover:border-primary-400/50 dark:hover:border-primary-500/40 hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-200 text-left"
             >
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Puzzle className="w-5 h-5 text-violet-400" />
+                <div className="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Puzzle className="w-5 h-5 text-primary-400" />
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">插件管理</h3>

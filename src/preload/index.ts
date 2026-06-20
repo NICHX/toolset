@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { PLUGIN_IPC_CHANNELS } from '../main/plugin-api'
 
+interface ThemeConfig {
+  mode: 'light' | 'dark' | 'system'
+}
+
 /**
  * 重试 IPC invoke，用于处理 dev 模式下主进程 handler 尚未就绪的情况
  */
@@ -106,6 +110,62 @@ const api = {
       isEnabled: (pluginId: string) =>
         ipcRenderer.invoke(PLUGIN_IPC_CHANNELS.META_IS_ENABLED, pluginId) as Promise<boolean>,
     },
+
+    // ========== 插件更新 API ==========
+    update: {
+      checkUpdate: () =>
+        ipcRenderer.invoke('plugin:check-update') as Promise<{ success: boolean; error?: string; updateInfo?: any; packagePath?: string }>,
+      applyUpdate: (pluginId: string, packagePath: string) =>
+        ipcRenderer.invoke('plugin:apply-update', pluginId, packagePath) as Promise<{ success: boolean; error?: string }>,
+    },
+  },
+
+  // ========== 全局快捷键 API ==========
+  shortcut: {
+    getAll: () =>
+      ipcRenderer.invoke('shortcut:get-all') as Promise<Array<{ id: string; pluginId: string; label: string; accelerator: string }>>,
+    update: (id: string, newAccelerator: string) =>
+      ipcRenderer.invoke('shortcut:update', id, newAccelerator) as Promise<{ conflict: boolean; existing?: { pluginId: string; label: string } }>,
+    reset: (id: string) =>
+      ipcRenderer.invoke('shortcut:reset', id) as Promise<void>,
+  },
+
+  // ========== 日志查看器 API ==========
+  log: {
+    get: (filter?: any) => ipcRenderer.invoke('log:get', filter) as Promise<any[]>,
+    clear: () => ipcRenderer.invoke('log:clear') as Promise<void>,
+  },
+
+  // ========== 插件依赖管理 API ==========
+  dependency: {
+    checkAll: () =>
+      ipcRenderer.invoke('dep:check-all') as Promise<{ valid: boolean; errors: { pluginId: string; errors: string[] }[] }>,
+    resolve: (pluginId: string) =>
+      ipcRenderer.invoke('dep:resolve', pluginId) as Promise<{ resolved: any; errors: string[] }>,
+  },
+
+  // ========== 性能监控 API ==========
+  perf: {
+    getStats: () => ipcRenderer.invoke('perf:get-stats') as Promise<{ pluginStats: Array<{ pluginId: string; cpuPercent: number; memoryMB: number; lastUpdated: string }>; overallStats: { cpuPercent: number; memoryMB: number; heapUsedMB: number; heapTotalMB: number } }>,
+    getOverall: () => ipcRenderer.invoke('perf:get-overall') as Promise<{ cpuPercent: number; memoryMB: number; heapUsedMB: number; heapTotalMB: number }>,
+  },
+
+  // ========== 主题配置 API ==========
+  theme: {
+    loadConfig: () =>
+      ipcRenderer.invoke('theme:load-config') as Promise<ThemeConfig>,
+    saveConfig: (config: ThemeConfig) =>
+      ipcRenderer.invoke('theme:save-config', config) as Promise<void>,
+  },
+
+  // ========== 配置备份/恢复 API ==========
+  configBackup: {
+    exportBackup: () =>
+      ipcRenderer.invoke('config-backup:export') as Promise<{ success: boolean; filePath?: string; error?: string }>,
+    importBackup: () =>
+      ipcRenderer.invoke('config-backup:import') as Promise<{ success: boolean; restored: number; errors: string[] }>,
+    collect: () =>
+      ipcRenderer.invoke('config-backup:collect') as Promise<Array<{ id: string; name: string; version: string }>>,
   },
 }
 

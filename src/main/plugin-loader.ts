@@ -6,7 +6,9 @@ import type { PluginMainContext, PluginMainEntry, PluginManifest, PluginEventsAP
 import { logger } from './logger'
 import { PluginConfig } from './plugin-config'
 import { PluginRegistry } from './plugin-registry'
+import { ShortcutManager } from './shortcut-manager'
 import { eventBus } from './event-bus'
+import { SandboxManager, buildDefaultPolicy } from './plugin-sandbox'
 
 // ========== Schema 校验 ==========
 
@@ -16,7 +18,7 @@ interface ValidationResult {
 }
 
 /** 校验 plugin.json 的必要字段 */
-function validateManifest(raw: unknown): ValidationResult {
+export function validateManifest(raw: unknown): ValidationResult {
   const errors: string[] = []
   if (!raw || typeof raw !== 'object') {
     return { valid: false, errors: ['manifest must be a non-null object'] }
@@ -78,15 +80,24 @@ interface LoadedPlugin {
 }
 
 export class PluginLoader {
+  /** 沙箱管理器，用于细粒度文件/网络/IPC 访问控制 */
+  readonly sandbox: SandboxManager = new SandboxManager()
+
   private plugins: Map<string, LoadedPlugin> = new Map()
   private mainWindow: BrowserWindow | null = null
   private tray: Tray | null = null
   private customTrayHandlers: (() => void)[] = []
   private _registry: PluginRegistry | null = null
+  private _shortcutManager: ShortcutManager | null = null
 
   /** 设置注册表实例（在 loadAll 前调用） */
   setRegistry(registry: PluginRegistry): void {
     this._registry = registry
+  }
+
+  /** 设置快捷键管理器（在 loadAll 前调用） */
+  setShortcutManager(manager: ShortcutManager): void {
+    this._shortcutManager = manager
   }
 
   private get registry(): PluginRegistry {
@@ -118,6 +129,9 @@ export class PluginLoader {
       fs.mkdirSync(pluginsDir, { recursive: true })
       return
     }
+
+    // 设置沙箱基础目录，用于解析 <plugin-dir> 占位符
+    this.sandbox.setPluginsBaseDir(pluginsDir)
 
     const entries = fs.readdirSync(pluginsDir, { withFileTypes: true })
     const loadPromises: Promise<void>[] = []
@@ -200,6 +214,10 @@ export class PluginLoader {
         logger.info('PluginLoader', `No main entry for plugin: ${manifest.id}, skipping main process`)
         addDummy()
       }
+
+      // 根据 manifest permissions 构建并设置沙箱策略
+      const policy = buildDefaultPolicy(manifest)
+      this.sandbox.setPolicy(manifest.id, policy)
 
       return true
     } catch (err) {
@@ -338,6 +356,28 @@ export class PluginLoader {
       onDisable: (callback) => { lifecycle.onDisable.add(callback) },
       onInstall: (callback) => { lifecycle.onInstall.add(callback) },
       onUninstall: (callback) => { lifecycle.onUninstall.add(callback) },
+
+      // ========== 快捷键注册 ==========
+      registerShortcut: (id, label, accelerator, action) => {
+        if (!this._shortcutManager) {
+          logger.warn('PluginLoader', `Plugin "${manifest.id}" attempted to register shortcut without ShortcutManager`)
+          return { conflict: false }
+        }
+        if (!this.hasPermission(manifest, 'shortcut') && !manifest.builtIn) {
+          logger.warn('PluginLoader', `Plugin "${manifest.id}" attempted to register shortcut without 'shortcut' permission`)
+          return { conflict: false }
+        }
+        const fullId = `${manifest.id}:${id}`
+        const result = this._shortcutManager.register(fullId, manifest.id, label, accelerator, action)
+        const p = getPlugin()
+        if (p) {
+          p.cleanupFns.push(() => this._shortcutManager?.unregister(fullId))
+        }
+        if (result.conflict) {
+          logger.warn('Shortcut', `Shortcut conflict for "${fullId}": accelerator "${accelerator}" already used by "${result.existing.pluginId}:${result.existing.label}"`)
+        }
+        return result
+      },
     }
   }
 
@@ -488,6 +528,9 @@ export class PluginLoader {
     }
 
     this.plugins.delete(id)
+
+    // 清理沙箱策略
+    this.sandbox.removePolicy(id)
   }
 
   /**
@@ -523,6 +566,7 @@ export class PluginLoader {
     this.customTrayHandlers = []
     eventBus.clearAll()
     this.registry.clear()
+    this.sandbox.clearAll()
     if (this.tray) {
       this.tray.destroy()
       this.tray = null

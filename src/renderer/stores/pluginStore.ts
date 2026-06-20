@@ -1,7 +1,7 @@
 "use client"
 
 import { create } from 'zustand'
-import type { PluginManifest } from '../../shared/types'
+import type { PluginManifest, PluginUpdateInfo } from '../../shared/types'
 
 interface PluginState {
   plugins: PluginManifest[]
@@ -9,10 +9,14 @@ interface PluginState {
   error: string | null
   loadPlugins: () => Promise<void>
   togglePlugin: (pluginId: string, enabled: boolean) => Promise<void>
-  installPlugin: (sourceDir?: string) => Promise<{ success: boolean; error?: string }>
-  installPluginFromFile: () => Promise<{ success: boolean; error?: string }>
+  /** 安装插件 — 自动识别文件（ZIP）或目录 */
+  installPlugin: () => Promise<{ success: boolean; error?: string }>
   uninstallPlugin: (pluginId: string) => Promise<{ success: boolean; error?: string }>
   clearAllPlugins: () => Promise<{ success: boolean; error?: string }>
+  /** 检查插件更新（通过选择更新包文件） */
+  checkPluginUpdate: () => Promise<{ success: boolean; error?: string; updateInfo?: PluginUpdateInfo; packagePath?: string }>
+  /** 执行插件更新 */
+  updatePlugin: (pluginId: string, packagePath: string) => Promise<{ success: boolean; error?: string }>
 }
 
 function loadRendererScript(jsPath: string, cssPath: string): Promise<void> {
@@ -112,9 +116,9 @@ export const usePluginStore = create<PluginState>((set, get) => ({
     }
   },
 
-  installPlugin: async (_sourceDir?) => {
+  installPlugin: async () => {
     try {
-      const result = await window.electronAPI.plugin.invoke('plugin:install')
+      const result = await window.electronAPI.plugin.invoke('plugin:install-unified')
       if (result.success) {
         // 重新加载插件列表
         const plugins = await window.electronAPI.plugin.getLoaded()
@@ -131,32 +135,6 @@ export const usePluginStore = create<PluginState>((set, get) => ({
           }
         } catch (scriptErr) {
           console.warn('[PluginStore] Failed to get renderer scripts after install:', scriptErr)
-        }
-      }
-      return result
-    } catch (err) {
-      return { success: false, error: (err as Error).message }
-    }
-  },
-
-  installPluginFromFile: async () => {
-    try {
-      const result = await window.electronAPI.plugin.invoke('plugin:install-from-file')
-      if (result.success) {
-        const plugins = await window.electronAPI.plugin.getLoaded()
-        set({ plugins })
-        // 独立加载 renderer scripts，每个脚本的错误不影响其他
-        try {
-          const scripts = await window.electronAPI.plugin.getRendererScripts()
-          for (const s of scripts) {
-            try {
-              await loadRendererScript(s.jsPath, s.cssPath)
-            } catch (scriptErr) {
-              console.warn(`[PluginStore] Failed to load renderer script for plugin ${s.id} after file install:`, scriptErr)
-            }
-          }
-        } catch (scriptErr) {
-          console.warn('[PluginStore] Failed to get renderer scripts after file install:', scriptErr)
         }
       }
       return result
@@ -190,6 +168,29 @@ export const usePluginStore = create<PluginState>((set, get) => ({
       const result = await window.electronAPI.plugin.invoke('plugin:clear-all')
       if (result.success) {
         set({ plugins: [] })
+      }
+      return result
+    } catch (err) {
+      return { success: false, error: (err as Error).message }
+    }
+  },
+
+  checkPluginUpdate: async () => {
+    try {
+      const result = await window.electronAPI.plugin.update.checkUpdate()
+      return result
+    } catch (err) {
+      return { success: false, error: (err as Error).message, updateInfo: undefined }
+    }
+  },
+
+  updatePlugin: async (pluginId, packagePath) => {
+    try {
+      const result = await window.electronAPI.plugin.update.applyUpdate(pluginId, packagePath)
+      if (result.success) {
+        // 重新加载插件列表
+        const plugins = await window.electronAPI.plugin.getLoaded()
+        set({ plugins })
       }
       return result
     } catch (err) {

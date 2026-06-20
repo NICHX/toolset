@@ -4,15 +4,24 @@ import fs from 'fs'
 import AdmZip from 'adm-zip'
 import { PLUGIN_IPC_CHANNELS } from './plugin-api'
 import { PluginLoader } from './plugin-loader'
+import { loadThemeConfig, saveThemeConfig } from './theme-config'
+import { checkUpdateFromPackage, getUpdateSourceDir } from './plugin-updater'
 import { PluginRegistry } from './plugin-registry'
+import { ShortcutManager } from './shortcut-manager'
 import { eventBus } from './event-bus'
-import { logger } from './logger'
+import { logger, getLogs, clearLogs } from './logger'
 import { SYSTEM_EVENTS } from '../shared/types'
+import { PerformanceMonitor } from './performance-monitor'
+import { checkAllDependencies, resolveDependencies } from './plugin-dependency-resolver'
+import { ConfigBackupManager } from './config-backup'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 let pluginsDir = ''
 let pluginRegistry: PluginRegistry
+let shortcutManager: ShortcutManager
+let configBackupManager: ConfigBackupManager
+let performanceMonitor: PerformanceMonitor
 
 function resolveAssetPath(relativePath: string): string | undefined {
   const candidates = [
@@ -100,6 +109,15 @@ function setupGenericIpcHandlers() {
 
   ipcMain.handle('app:close', () => {
     mainWindow?.close()
+  })
+
+  // Theme config IPC
+  ipcMain.handle('theme:load-config', () => {
+    return loadThemeConfig()
+  })
+
+  ipcMain.handle('theme:save-config', (_event, config) => {
+    saveThemeConfig(config)
   })
 }
 
@@ -277,7 +295,24 @@ app.whenReady().then(async () => {
     pluginsDir = path.join(app.getPath('userData'), 'plugins')
     pluginRegistry = new PluginRegistry(path.join(app.getPath('userData'), 'plugins'))
     pluginLoader.setRegistry(pluginRegistry)
+    // 初始化快捷键管理器
+    shortcutManager = new ShortcutManager(path.join(app.getPath('userData'), 'plugins'))
+    shortcutManager.setMainWindow(mainWindow)
+    // 注入到 PluginLoader 上下文
+    pluginLoader.setShortcutManager(shortcutManager)
+    // 初始化配置备份管理器
+    configBackupManager = new ConfigBackupManager(pluginsDir)
     await pluginLoader.loadAll(pluginsDir)
+    // 加载后注册所有快捷键
+    shortcutManager.registerAll()
+
+    // 初始化性能监控并注册所有已加载插件
+    performanceMonitor = new PerformanceMonitor()
+    const manifests = pluginLoader.getManifests()
+    for (const m of manifests) {
+      if (m.id) performanceMonitor.registerPlugin(m.id)
+    }
+    performanceMonitor.start()
   }
 
   // 通知渲染进程插件已加载
@@ -444,6 +479,225 @@ app.whenReady().then(async () => {
     }
   })
 
+  // IPC: 统一安装 — 自动识别文件（ZIP）或目录，安装插件
+  ipcMain.handle('plugin:install-unified', async () => {
+    if (!mainWindow) return { success: false, error: '主窗口未就绪' }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择插件包（支持 .plugin.zip / .zip 文件和目录）',
+      filters: [
+        { name: '插件包', extensions: ['plugin', 'plugin.zip', 'zip'] },
+      ],
+      properties: ['openFile', 'openDirectory'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: '用户取消' }
+    }
+
+    const selectedPath = result.filePaths[0]
+    const stat = fs.statSync(selectedPath)
+
+    // 根据文件/目录获取包含 plugin.json 的源目录
+    let pluginSourceDir: string
+
+    if (stat.isDirectory()) {
+      // 目录安装：直接查找 plugin.json
+      const manifestPath = path.join(selectedPath, 'plugin.json')
+      if (!fs.existsSync(manifestPath)) {
+        return { success: false, error: '所选目录中未找到 plugin.json' }
+      }
+      const validation = validatePluginDir(selectedPath)
+      if (!validation.valid) {
+        return { success: false, error: validation.error }
+      }
+      pluginSourceDir = selectedPath
+    } else {
+      // 文件安装：解压 ZIP 到临时目录
+      const tempDir = path.join(app.getPath('temp'), `plugin-install-${Date.now()}`)
+      try {
+        const zip = new AdmZip(selectedPath)
+        extractZipSafely(zip, tempDir)
+
+        const findManifest = (dir: string): string | null => {
+          const mp = path.join(dir, 'plugin.json')
+          if (fs.existsSync(mp)) return mp
+          const entries = fs.readdirSync(dir, { withFileTypes: true })
+          for (const e of entries) {
+            if (e.isDirectory()) {
+              const found = findManifest(path.join(dir, e.name))
+              if (found) return found
+            }
+          }
+          return null
+        }
+
+        const manifestPath = findManifest(tempDir)
+        if (!manifestPath) {
+          return { success: false, error: '插件包中未找到 plugin.json' }
+        }
+
+        const validation = validatePluginDir(path.dirname(manifestPath))
+        if (!validation.valid) {
+          return { success: false, error: validation.error }
+        }
+
+        pluginSourceDir = path.dirname(manifestPath)
+      } catch {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+        return { success: false, error: '解压插件包失败' }
+      }
+
+      // 注册清理（正常和异常路径都要确保清理）
+      const cleanupTemp = () => {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+      }
+
+      try {
+        // 弹出安装确认对话框
+        const confirmed = await confirmPluginInstall(mainWindow, path.join(pluginSourceDir, 'plugin.json'))
+        if (!confirmed) { cleanupTemp(); return { success: false, error: '用户取消' } }
+
+        let pluginId: string
+        try {
+          const raw = fs.readFileSync(path.join(pluginSourceDir, 'plugin.json'), 'utf-8')
+          pluginId = JSON.parse(raw).id
+          if (!pluginId) throw new Error('插件 ID 为空')
+        } catch (e) {
+          cleanupTemp()
+          return { success: false, error: `无效的 plugin.json: ${(e as Error).message}` }
+        }
+
+        if (!fs.existsSync(pluginsDir)) {
+          fs.mkdirSync(pluginsDir, { recursive: true })
+        }
+        const targetPath = path.join(pluginsDir, pluginId)
+
+        const copyResult = replacePluginDirPreservingConfig(targetPath, pluginSourceDir)
+        if (!copyResult.success) { cleanupTemp(); return copyResult }
+
+        logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${selectedPath}`)
+
+        try {
+          pluginLoader.removePlugin(pluginId)
+          pluginLoader.loadSingle(pluginsDir, pluginId)
+          pluginLoader.triggerInstall(pluginId)
+          eventBus.emit(SYSTEM_EVENTS.PLUGIN_INSTALLED, { pluginId })
+          logger.info('Plugin Install', `Loaded plugin "${pluginId}"`)
+        } catch (e) {
+          cleanupTemp()
+          return { success: false, error: `加载插件失败: ${(e as Error).message}` }
+        }
+
+        cleanupTemp()
+        return { success: true }
+      } catch {
+        cleanupTemp()
+        return { success: false, error: '安装过程中发生错误' }
+      }
+    }
+
+    // 目录安装的后续流程
+    try {
+      const confirmed = await confirmPluginInstall(mainWindow, path.join(pluginSourceDir, 'plugin.json'))
+      if (!confirmed) return { success: false, error: '用户取消' }
+
+      let pluginId: string
+      try {
+        const raw = fs.readFileSync(path.join(pluginSourceDir, 'plugin.json'), 'utf-8')
+        pluginId = JSON.parse(raw).id
+        if (!pluginId) throw new Error('插件 ID 为空')
+      } catch (e) {
+        return { success: false, error: `无效的 plugin.json: ${(e as Error).message}` }
+      }
+
+      if (!fs.existsSync(pluginsDir)) {
+        fs.mkdirSync(pluginsDir, { recursive: true })
+      }
+      const targetPath = path.join(pluginsDir, pluginId)
+
+      const copyResult = replacePluginDirPreservingConfig(targetPath, pluginSourceDir)
+      if (!copyResult.success) return copyResult
+
+      logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${selectedPath}`)
+
+      try {
+        pluginLoader.removePlugin(pluginId)
+        pluginLoader.loadSingle(pluginsDir, pluginId)
+        pluginLoader.triggerInstall(pluginId)
+        eventBus.emit(SYSTEM_EVENTS.PLUGIN_INSTALLED, { pluginId })
+        logger.info('Plugin Install', `Loaded plugin "${pluginId}"`)
+      } catch (e) {
+        return { success: false, error: `加载插件失败: ${(e as Error).message}` }
+      }
+
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: `安装过程中发生错误: ${(e as Error).message}` }
+    }
+  })
+
+  // IPC: 检查插件更新 — 选择更新包文件并与已安装版本比较
+  ipcMain.handle('plugin:check-update', async () => {
+    if (!mainWindow) return { success: false, error: '主窗口未就绪', updateInfo: null }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择插件更新包',
+      filters: [
+        { name: '插件包', extensions: ['plugin', 'plugin.zip', 'zip'] },
+      ],
+      properties: ['openFile'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: '已取消', updateInfo: null }
+    }
+
+    const packagePath = result.filePaths[0]
+    const installedPlugins = pluginLoader.getManifests()
+    const updateInfo = checkUpdateFromPackage(packagePath, installedPlugins)
+
+    if (!updateInfo) {
+      return { success: false, error: '未检测到可用的更新（包无效或版本不高于已安装版本）', updateInfo: null }
+    }
+
+    return { success: true, updateInfo, packagePath }
+  })
+
+  // IPC: 执行插件更新 — 从已检查的更新包执行更新
+  ipcMain.handle('plugin:apply-update', async (_event, pluginId: string, packagePath: string) => {
+    const sourceDir = getUpdateSourceDir(packagePath)
+    if (!sourceDir) {
+      return { success: false, error: '无法读取更新包内容' }
+    }
+
+    try {
+      // 使用保留配置的替换逻辑
+      const targetPath = path.join(pluginsDir, pluginId)
+      const copyResult = replacePluginDirPreservingConfig(targetPath, sourceDir)
+      if (!copyResult.success) return copyResult
+
+      logger.info('Plugin Update', `Updated plugin "${pluginId}"`)
+
+      // 重新加载插件
+      try {
+        pluginLoader.removePlugin(pluginId)
+        await pluginLoader.loadSingle(pluginsDir, pluginId)
+        eventBus.emit(SYSTEM_EVENTS.PLUGIN_INSTALLED, { pluginId })
+        logger.info('Plugin Update', `Reloaded plugin "${pluginId}" after update`)
+      } catch (e) {
+        return { success: false, error: `重载插件失败: ${(e as Error).message}` }
+      }
+
+      return { success: true }
+    } finally {
+      // 如果是临时解压目录，清理
+      if (sourceDir.startsWith(path.join(path.dirname(packagePath), '.update-src-'))) {
+        try { fs.rmSync(sourceDir, { recursive: true, force: true }) } catch {}
+      }
+    }
+  })
+
   // IPC: 卸载插件 — 删除插件目录
   ipcMain.handle('plugin:uninstall', async (_event, pluginId: string) => {
     const targetPath = path.join(pluginsDir, pluginId)
@@ -585,6 +839,72 @@ app.whenReady().then(async () => {
     if (data.error.stack) {
       logger.error('PluginRender', `[${data.pluginId}] Stack: ${data.error.stack.split('\n').slice(0, 3).join(' | ')}`)
     }
+  })
+
+  // ========== 全局快捷键管理 ==========
+
+  ipcMain.handle('shortcut:get-all', () => {
+    return shortcutManager?.getBindings() ?? []
+  })
+
+  ipcMain.handle('shortcut:update', (_event, id: string, newAccelerator: string) => {
+    const result = shortcutManager?.updateAccelerator(id, newAccelerator)
+    return result ?? { conflict: false }
+  })
+
+  ipcMain.handle('shortcut:reset', (_event, id: string) => {
+    shortcutManager?.unregister(id)
+  })
+
+  // ========== 插件依赖管理 IPC ==========
+
+  ipcMain.handle('dep:check-all', () => {
+    const manifests = pluginLoader.getManifests()
+    return checkAllDependencies(manifests)
+  })
+
+  ipcMain.handle('dep:resolve', (_event, pluginId: string) => {
+    const manifests = pluginLoader.getManifests()
+    return resolveDependencies(manifests, pluginId)
+  })
+
+  // ========== 日志查看器 IPC ==========
+
+  ipcMain.handle('log:get', (_event, filter?: { module?: string; level?: string; search?: string; limit?: number; offset?: number }) => {
+    return getLogs(filter)
+  })
+
+  ipcMain.handle('log:clear', () => {
+    clearLogs()
+  })
+
+  // ========== 性能监控 IPC ==========
+
+  ipcMain.handle('perf:get-stats', () => {
+    return {
+      pluginStats: performanceMonitor.getStats(),
+      overallStats: performanceMonitor.getOverallStats(),
+    }
+  })
+
+  ipcMain.handle('perf:get-overall', () => {
+    return performanceMonitor.getOverallStats()
+  })
+
+  // ========== 配置备份/恢复 ==========
+
+  ipcMain.handle('config-backup:export', async () => {
+    if (!mainWindow) return { success: false, error: '主窗口未就绪', filePath: undefined }
+    return configBackupManager.exportBackup(mainWindow)
+  })
+
+  ipcMain.handle('config-backup:import', async () => {
+    if (!mainWindow) return { success: false, error: '主窗口未就绪', restored: 0, errors: ['主窗口未就绪'] }
+    return configBackupManager.importBackup(mainWindow)
+  })
+
+  ipcMain.handle('config-backup:collect', () => {
+    return configBackupManager.collectPluginConfigs()
   })
 
   // ========== 系统事件桥接（主 → 渲染） ==========

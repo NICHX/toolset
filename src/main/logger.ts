@@ -2,6 +2,49 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
+export interface LogEntry {
+  timestamp: string
+  level: 'info' | 'warn' | 'error'
+  module: string
+  message: string
+}
+
+const MAX_LOG_ENTRIES = 1000
+const logBuffer: LogEntry[] = []
+
+export function getLogs(filter?: {
+  module?: string
+  level?: string
+  search?: string
+  limit?: number
+  offset?: number
+}): LogEntry[] {
+  let filtered = logBuffer
+
+  if (filter?.module) {
+    filtered = filtered.filter((e) => e.module === filter.module)
+  }
+  if (filter?.level) {
+    filtered = filtered.filter((e) => e.level === filter.level)
+  }
+  if (filter?.search) {
+    const q = filter.search.toLowerCase()
+    filtered = filtered.filter(
+      (e) =>
+        e.message.toLowerCase().includes(q) ||
+        e.module.toLowerCase().includes(q)
+    )
+  }
+
+  const offset = filter?.offset ?? 0
+  const limit = filter?.limit ?? filtered.length
+  return filtered.slice(offset, offset + limit)
+}
+
+export function clearLogs(): void {
+  logBuffer.length = 0
+}
+
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const
 type LogLevel = (typeof LOG_LEVELS)[number]
 
@@ -94,6 +137,13 @@ class FileLogger {
         break
       default:
         console.log(line)
+    }
+
+    // 写入内存环形缓冲区
+    const entryLevel = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'info'
+    logBuffer.push({ timestamp, level: entryLevel, module: tag, message })
+    if (logBuffer.length > MAX_LOG_ENTRIES) {
+      logBuffer.splice(0, logBuffer.length - MAX_LOG_ENTRIES)
     }
   }
 

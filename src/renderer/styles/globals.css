@@ -1,3 +1,80 @@
+:root {
+  /* 主色（靛蓝，固定） */
+  --primary-50: #eef2ff;
+  --primary-100: #e0e7ff;
+  --primary-200: #c7d2fe;
+  --primary-300: #a5b4fc;
+  --primary-400: #818cf8;
+  --primary-500: #6366f1;
+  --primary-600: #4f46e5;
+  --primary-700: #4338ca;
+  --primary-800: #3730a3;
+  --primary-900: #312e81;
+  --primary-950: #1e1b4b;
+  /* 浅色模式表面色 */
+  --bg-color: #e2e8f8;
+  --card-bg-rgb: 255 255 255;
+  --border-rgb: 203 213 225;
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+}
+
+.dark {
+  /* 深色模式表面色 */
+  --bg-color: #1a2332;
+  --card-bg-rgb: 30 41 59;
+  --border-rgb: 51 65 85;
+}
+
+/* 主题色应用到更多 UI 表面 */
+::selection {
+  background-color: var(--primary-200);
+}
+
+:focus-visible {
+  outline-color: var(--primary-500);
+}
+
+/* 滚动条主题色 */
+::-webkit-scrollbar-thumb {
+  background-color: rgb(255 255 255 / 0.15);
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgb(255 255 255 / 0.15);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 链接默认颜色 */
+a {
+  color: var(--primary-500);
+}
+
+/* 浅色模式下侧栏/页头背景跟随主题色 */
+.surface-sidebar {
+  background-color: color-mix(in srgb, var(--bg-color) 60%, white 40%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dark .surface-sidebar {
+  background-color: rgb(15 23 42 / 0.8);
+}
+
+.surface-header {
+  background-color: color-mix(in srgb, var(--bg-color) 50%, white 50%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dark .surface-header {
+  background-color: rgb(15 23 42 / 0.6);
+}
+
 *, ::before, ::after {
   --tw-border-spacing-x: 0;
   --tw-border-spacing-y: 0;
@@ -555,16 +632,18 @@ video {
 
 body {
   --tw-bg-opacity: 1;
-  background-color: rgb(249 250 251 / var(--tw-bg-opacity, 1));
+  background-color: var(--bg-color, rgb(249 250 251 / var(--tw-bg-opacity, 1)));
   --tw-text-opacity: 1;
   color: rgb(17 24 39 / var(--tw-text-opacity, 1));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 14px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
 body:is(.dark *) {
   --tw-bg-opacity: 1;
-  background-color: rgb(2 6 23 / var(--tw-bg-opacity, 1));
+  background-color: var(--bg-color, rgb(2 6 23 / var(--tw-bg-opacity, 1)));
   --tw-text-opacity: 1;
   color: rgb(241 245 249 / var(--tw-text-opacity, 1));
 }
@@ -670,7 +749,7 @@ body {
 }
 
 .glass-card {
-  border-radius: 0.75rem;
+    border-radius: 0.75rem;
   border-width: 1px;
   background-color: rgb(255 255 255 / 0.6);
   --tw-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -689,11 +768,11 @@ body {
 }
 
 .glass-card:is(.dark *) {
-  background-color: rgb(30 41 59 / 0.7);
+  background-color: rgb(var(--card-bg-rgb) / 0.7);
 }
 
 .glass-card:hover:is(.dark *) {
-  border-color: rgb(71 85 105 / 0.5);
+  border-color: rgb(var(--border-rgb) / 0.5);
 }
 
 .btn-primary {

@@ -42,12 +42,36 @@ export interface PluginManifest {
   pages: PluginPage[]
   useHostStyles?: boolean
   permissions?: string[]
+  /** 最低平台版本要求 */
+  minimumToolsetVersion?: string
+  /** 插件依赖声明 */
+  dependencies?: PluginDependency[]
 }
 
 export interface PluginPage {
   id: string
   name: string
   icon: string
+}
+
+// ==================== 插件更新（本地文件包方式） ====================
+
+/** 更新检查结果 */
+export interface PluginUpdateInfo {
+  pluginId: string
+  pluginName: string
+  currentVersion: string
+  newVersion: string
+  newDescription?: string
+  changelog?: string
+}
+
+// ==================== 插件依赖 ====================
+
+export interface PluginDependency {
+  id: string
+  version: string
+  optional?: boolean
 }
 
 // ==================== 插件主进程上下文 ====================
@@ -82,6 +106,8 @@ export interface PluginMainContext {
   onInstall: (callback: () => void) => void
   /** 插件卸载前回调 */
   onUninstall: (callback: () => void) => void
+  /** 注册全局快捷键 */
+  registerShortcut: (id: string, label: string, accelerator: string, action: () => void) => { conflict: boolean; existing?: { pluginId: string; label: string } }
 }
 
 export interface PluginMainEntry {
