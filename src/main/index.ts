@@ -1,23 +1,38 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog, protocol, net, shell } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import AdmZip from 'adm-zip'
 import { PLUGIN_IPC_CHANNELS } from './plugin-api'
 import { PluginLoader } from './plugin-loader'
+import { PluginRegistry } from './plugin-registry'
+import { eventBus } from './event-bus'
 import { logger } from './logger'
+import { SYSTEM_EVENTS } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 let pluginsDir = ''
-let statesFile = ''
+let pluginRegistry: PluginRegistry
+
+function resolveAssetPath(relativePath: string): string | undefined {
+  const candidates = [
+    path.join(__dirname, '..', relativePath),       // dist/assets/icon.png (prod)
+    path.join(__dirname, '..', '..', relativePath),  // project-root/assets/icon.png (dev)
+  ]
+  return candidates.find((p) => fs.existsSync(p))
+}
 
 function createMainWindow() {
   const isMac = process.platform === 'darwin'
+  const iconPath = resolveAssetPath('assets/icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
     minWidth: 800,
     minHeight: 600,
     title: '工具集',
+    icon: iconPath,
     ...(isMac
       ? { titleBarStyle: 'hiddenInset' as const }
       : { frame: false }),
@@ -118,6 +133,89 @@ function copyPluginFiles(src: string, dest: string) {
   }
 }
 
+/** 安全解压 ZIP，防止 ZIP Slip 路径穿越攻击 */
+function extractZipSafely(zip: AdmZip, targetDir: string) {
+  const resolvedTarget = path.resolve(targetDir)
+  fs.mkdirSync(resolvedTarget, { recursive: true })
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue
+    const entryPath = path.resolve(targetDir, entry.entryName)
+    if (!entryPath.startsWith(resolvedTarget)) {
+      throw new Error(`安全错误: ZIP 条目 "${entry.entryName}" 尝试路径穿越`)
+    }
+    const dir = path.dirname(entryPath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(entryPath, entry.getData())
+  }
+}
+
+/** 校验插件目录完整性 */
+function validatePluginDir(dir: string): { valid: boolean; error?: string } {
+  const manifestPath = path.join(dir, 'plugin.json')
+  if (!fs.existsSync(manifestPath)) return { valid: false, error: '缺少 plugin.json' }
+  let manifest: any
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) }
+  catch { return { valid: false, error: 'plugin.json 格式无效' } }
+  if (!manifest.id || typeof manifest.id !== 'string') return { valid: false, error: '插件 ID 缺失或无效' }
+  if (!manifest.name) return { valid: false, error: '插件名称缺失' }
+  if (!manifest.version) return { valid: false, error: '插件版本缺失' }
+  return { valid: true }
+}
+
+/** 保存插件旧配置，删除目录后再恢复 */
+function replacePluginDirPreservingConfig(targetPath: string, sourcePath: string): { success: boolean; error?: string } {
+  let oldConfig: Record<string, any> | null = null
+  if (fs.existsSync(targetPath)) {
+    const configPath = path.join(targetPath, 'config.json')
+    if (fs.existsSync(configPath)) {
+      try { oldConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')) } catch {}
+    }
+    try {
+      fs.rmSync(targetPath, { recursive: true, force: true })
+    } catch (e) {
+      return { success: false, error: `清理旧插件目录失败: ${(e as Error).message}` }
+    }
+  }
+  try {
+    copyPluginFiles(sourcePath, targetPath)
+  } catch (e) {
+    return { success: false, error: `复制插件文件失败: ${(e as Error).message}` }
+  }
+  // 恢复旧配置
+  if (oldConfig) {
+    try {
+      fs.writeFileSync(path.join(targetPath, 'config.json'), JSON.stringify(oldConfig, null, 2), 'utf-8')
+    } catch (e) {
+      logger.warn('Plugin', `Failed to copy config.json: ${(e as Error).message || e}`)
+    }
+  }
+  return { success: true }
+}
+
+/** 读取插件 manifest 并弹出安装确认对话框。用户取消时返回 false */
+async function confirmPluginInstall(mainWindow: BrowserWindow, manifestPath: string): Promise<boolean> {
+  const raw = fs.readFileSync(manifestPath, 'utf-8')
+  const manifest = JSON.parse(raw)
+  const permissions = manifest.permissions?.length ? manifest.permissions.join(', ') : '无'
+
+  const detail = [
+    `描述: ${manifest.description || '无'}`,
+    `权限: ${permissions}`,
+    manifest.builtIn ? '\n此插件为内置插件。' : '',
+  ].filter(Boolean).join('\n')
+
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: '安装插件',
+    message: `${manifest.name}  v${manifest.version}`,
+    detail,
+    buttons: ['取消', '确认安装'],
+    defaultId: 1,
+    cancelId: 0,
+  })
+  return result.response === 1
+}
+
 // Plugin loader
 const pluginLoader = new PluginLoader()
 
@@ -126,9 +224,17 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'plugin', privileges: { supportFetchAPI: true, bypassCSP: true, stream: true } },
 ])
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // 初始化文件日志
   try { logger.init() } catch { /* app 初始化阶段 */ }
+
+  // 设置 macOS Dock 图标
+  if (process.platform === 'darwin' && app.dock) {
+    const iconPath = resolveAssetPath('assets/icon.png')
+    if (iconPath) {
+      app.dock.setIcon(iconPath)
+    }
+  }
 
   if (process.platform === 'win32') {
     Menu.setApplicationMenu(null)
@@ -148,26 +254,30 @@ app.whenReady().then(() => {
     return net.fetch(`file://${filePath}`)
   })
 
+  // ★ 先注册所有 IPC handler（必须在 createMainWindow 之前，
+  //    否则渲染进程可能在插件加载完成前发起 IPC 调用，
+  //    导致 "No handler registered for 'plugin:get-loaded'" 错误）
+  ipcMain.handle('plugin:get-loaded', () => {
+    return pluginLoader.getManifests()
+  })
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.GET_MAIN_API, () => {
+    return { loaded: pluginLoader.getPluginIds() }
+  })
+  ipcMain.handle('plugin:get-renderer-scripts', () => {
+    return pluginLoader.getRendererScripts()
+  })
+
   createMainWindow()
   setupGenericIpcHandlers()
 
   // 加载所有已安装的插件
   if (mainWindow) {
     pluginLoader.setMainWindow(mainWindow)
-    // 从插件目录加载
+    // 初始化注册表并注入 PluginLoader
     pluginsDir = path.join(app.getPath('userData'), 'plugins')
-    statesFile = path.join(app.getPath('userData'), 'plugin-states.json')
-    pluginLoader.loadAll(pluginsDir)
-
-    // 应用已保存的插件启用状态
-    try {
-      if (fs.existsSync(statesFile)) {
-        const states = JSON.parse(fs.readFileSync(statesFile, 'utf-8')) as Record<string, boolean>
-        pluginLoader.applyStates(states)
-      }
-    } catch (e) {
-      logger.warn('Main', 'Failed to load plugin states:', e)
-    }
+    pluginRegistry = new PluginRegistry(path.join(app.getPath('userData'), 'plugins'))
+    pluginLoader.setRegistry(pluginRegistry)
+    await pluginLoader.loadAll(pluginsDir)
   }
 
   // 通知渲染进程插件已加载
@@ -176,21 +286,6 @@ app.whenReady().then(() => {
       mainWindow?.webContents.send('plugins:loaded')
     })
   }
-
-  // IPC: 获取已加载的插件列表
-  ipcMain.handle('plugin:get-loaded', () => {
-    return pluginLoader.getManifests()
-  })
-
-  // IPC: 获取已加载插件的主进程 API
-  ipcMain.handle(PLUGIN_IPC_CHANNELS.GET_MAIN_API, () => {
-    return { loaded: pluginLoader.getPluginIds() }
-  })
-
-  // IPC: 获取插件 renderer 脚本路径
-  ipcMain.handle('plugin:get-renderer-scripts', () => {
-    return pluginLoader.getRendererScripts()
-  })
 
   // IPC: 安装插件 — 用户选择目录后复制到插件目录
   ipcMain.handle('plugin:install', async () => {
@@ -206,62 +301,147 @@ app.whenReady().then(() => {
     }
 
     const sourcePath = result.filePaths[0]
-    const manifestPath = path.join(sourcePath, 'plugin.json')
 
-    if (!fs.existsSync(manifestPath)) {
-      logger.error('Plugin Install', `Selected directory does not contain plugin.json: ${sourcePath}`)
-      return { success: false, error: '所选目录不包含 plugin.json' }
+    // 校验插件目录完整性
+    const validation = validatePluginDir(sourcePath)
+    if (!validation.valid) {
+      return { success: false, error: validation.error }
     }
 
     // 读取 manifest 获取插件 ID
     let pluginId: string
     try {
-      const raw = fs.readFileSync(manifestPath, 'utf-8')
+      const raw = fs.readFileSync(path.join(sourcePath, 'plugin.json'), 'utf-8')
       pluginId = JSON.parse(raw).id
-      if (!pluginId) throw new Error('插件 ID 为空')
     } catch (e) {
-      logger.error('Plugin Install', `Invalid plugin.json in ${sourcePath}:`, e)
       return { success: false, error: `无效的 plugin.json: ${(e as Error).message}` }
     }
+
+    // 弹出安装确认对话框
+    const confirmed = await confirmPluginInstall(mainWindow, path.join(sourcePath, 'plugin.json'))
+    if (!confirmed) return { success: false, error: '用户取消' }
 
     // 确保插件目录存在且是有效目录
     if (!fs.existsSync(pluginsDir)) {
       fs.mkdirSync(pluginsDir, { recursive: true })
     } else if (!fs.statSync(pluginsDir).isDirectory()) {
-      // pluginsDir 存在但不是一个目录，删除后重建
       fs.rmSync(pluginsDir, { recursive: true, force: true })
       fs.mkdirSync(pluginsDir, { recursive: true })
     }
 
+    // 复制文件并保留旧配置
     const targetPath = path.join(pluginsDir, pluginId)
-    if (fs.existsSync(targetPath)) {
-      logger.info('Plugin Install', `Plugin "${pluginId}" directory exists, removing before re-install`)
-      try {
-        fs.rmSync(targetPath, { recursive: true, force: true })
-      } catch (e) {
-        return { success: false, error: `清理旧的插件目录失败: ${(e as Error).message}` }
-      }
-    }
+    const copyResult = replacePluginDirPreservingConfig(targetPath, sourcePath)
+    if (!copyResult.success) return copyResult
 
-    try {
-      copyPluginFiles(sourcePath, targetPath)
-      logger.info('Plugin Install', `Copied plugin "${pluginId}" from ${sourcePath} to ${targetPath}`)
-    } catch (e) {
-      logger.error('Plugin Install', `Failed to copy plugin "${pluginId}" directory:`, e)
-      return { success: false, error: `复制插件目录失败: ${(e as Error).message}` }
-    }
+    logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${sourcePath}`)
 
-    // 重新加载插件（先移除内存中的旧条目，防止 "already loaded" 跳过）
+    // 加载插件
     try {
       pluginLoader.removePlugin(pluginId)
-      pluginLoader.loadAll(pluginsDir)
-      logger.info('Plugin Install', `Reloaded all plugins after installing "${pluginId}"`)
+      await pluginLoader.loadSingle(pluginsDir, pluginId)
+      pluginLoader.triggerInstall(pluginId)
+      eventBus.emit(SYSTEM_EVENTS.PLUGIN_INSTALLED, { pluginId })
+      logger.info('Plugin Install', `Loaded plugin "${pluginId}"`)
     } catch (e) {
-      logger.error('Plugin Install', `Failed to load plugin "${pluginId}":`, e)
       return { success: false, error: `加载插件失败: ${(e as Error).message}` }
     }
 
     return { success: true }
+  })
+
+  // IPC: 从文件安装插件（支持 .plugin.zip / .zip）
+  ipcMain.handle('plugin:install-from-file', async () => {
+    if (!mainWindow) return { success: false, error: '主窗口未就绪' }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择插件包',
+      filters: [
+        { name: '插件包', extensions: ['plugin', 'plugin.zip', 'zip'] },
+      ],
+      properties: ['openFile'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: '用户取消' }
+    }
+
+    const filePath = result.filePaths[0]
+
+    // 解压到临时目录（try-finally 确保清理）
+    const tempDir = path.join(app.getPath('temp'), `plugin-install-${Date.now()}`)
+    try {
+      const zip = new AdmZip(filePath)
+      extractZipSafely(zip, tempDir)
+
+      // 查找 plugin.json（可能在解压根目录或子目录中）
+      const findManifest = (dir: string): string | null => {
+        const manifestPath = path.join(dir, 'plugin.json')
+        if (fs.existsSync(manifestPath)) return manifestPath
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const found = findManifest(path.join(dir, entry.name))
+            if (found) return found
+          }
+        }
+        return null
+      }
+
+      const manifestPath = findManifest(tempDir)
+      if (!manifestPath) {
+        return { success: false, error: '插件包中未找到 plugin.json' }
+      }
+
+      // 校验插件目录完整性
+      const pluginSourceDir = path.dirname(manifestPath)
+      const validation = validatePluginDir(pluginSourceDir)
+      if (!validation.valid) {
+        return { success: false, error: validation.error }
+      }
+
+      // 弹出安装确认对话框
+      const confirmed = await confirmPluginInstall(mainWindow, manifestPath)
+      if (!confirmed) return { success: false, error: '用户取消' }
+
+      // 读取 manifest 获取插件 ID
+      let pluginId: string
+      try {
+        const raw = fs.readFileSync(manifestPath, 'utf-8')
+        pluginId = JSON.parse(raw).id
+        if (!pluginId) throw new Error('插件 ID 为空')
+      } catch (e) {
+        return { success: false, error: `无效的 plugin.json: ${(e as Error).message}` }
+      }
+
+      // 目标：pluginsDir/{pluginId}
+      if (!fs.existsSync(pluginsDir)) {
+        fs.mkdirSync(pluginsDir, { recursive: true })
+      }
+      const targetPath = path.join(pluginsDir, pluginId)
+
+      // 复制文件并保留旧配置
+      const copyResult = replacePluginDirPreservingConfig(targetPath, pluginSourceDir)
+      if (!copyResult.success) return copyResult
+
+      logger.info('Plugin Install', `Installed plugin "${pluginId}" from ${filePath}`)
+
+      // 加载插件
+      try {
+        pluginLoader.removePlugin(pluginId)
+        pluginLoader.loadSingle(pluginsDir, pluginId)
+        pluginLoader.triggerInstall(pluginId)
+        eventBus.emit(SYSTEM_EVENTS.PLUGIN_INSTALLED, { pluginId })
+        logger.info('Plugin Install', `Loaded plugin "${pluginId}" from zip`)
+      } catch (e) {
+        return { success: false, error: `加载插件失败: ${(e as Error).message}` }
+      }
+
+      return { success: true }
+    } finally {
+      // 确保临时目录总是被清理
+      try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+    }
   })
 
   // IPC: 卸载插件 — 删除插件目录
@@ -274,9 +454,13 @@ app.whenReady().then(() => {
     }
 
     try {
+      // 先触发卸载回调，再删除目录
+      pluginLoader.triggerUninstall(pluginId)
       fs.rmSync(targetPath, { recursive: true, force: true })
-      // 从内存中移除，避免残留条目导致下次 loadAll 时跳过
-      pluginLoader.removePlugin(pluginId)
+      // 从内存和注册表中移除
+      pluginLoader.unregisterPlugin(pluginId)
+      eventBus.emit(SYSTEM_EVENTS.PLUGIN_UNINSTALLED, { pluginId })
+
       return { success: true }
     } catch (e) {
       return { success: false, error: `删除插件目录失败: ${(e as Error).message}` }
@@ -286,20 +470,31 @@ app.whenReady().then(() => {
   // IPC: 保存插件启用状态
   ipcMain.handle('plugin:save-states', (_event, states: Record<string, boolean>) => {
     try {
-      fs.writeFileSync(statesFile, JSON.stringify(states, null, 2), 'utf-8')
+      // 更新内存状态并触发生命周期回调
+      const oldManifests = pluginLoader.getManifests()
+      for (const manifest of oldManifests) {
+        if (manifest.id in states && manifest.enabled !== states[manifest.id]) {
+          if (states[manifest.id]) {
+            pluginLoader.triggerEnable(manifest.id)
+            eventBus.emit(SYSTEM_EVENTS.PLUGIN_ENABLED, { pluginId: manifest.id })
+          } else {
+            pluginLoader.triggerDisable(manifest.id)
+            eventBus.emit(SYSTEM_EVENTS.PLUGIN_DISABLED, { pluginId: manifest.id })
+          }
+        }
+      }
+      // 应用新状态到内存和注册表（registry 自动持久化）
+      pluginLoader.applyStates(states)
       return { success: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
   })
 
-  // IPC: 加载插件启用状态
+  // IPC: 加载插件启用状态（从 registry 读取）
   ipcMain.handle('plugin:load-states', () => {
     try {
-      if (fs.existsSync(statesFile)) {
-        return JSON.parse(fs.readFileSync(statesFile, 'utf-8'))
-      }
-      return {}
+      return pluginRegistry.getAllEnabled()
     } catch (e) {
       logger.warn('Main', 'Failed to load plugin states:', e)
       return {}
@@ -307,7 +502,7 @@ app.whenReady().then(() => {
   })
 
   // IPC: 清除所有已安装插件
-  ipcMain.handle('plugin:clear-all', () => {
+  ipcMain.handle('plugin:clear-all', async () => {
     if (!pluginsDir || !fs.existsSync(pluginsDir)) {
       return { success: true }
     }
@@ -318,15 +513,12 @@ app.whenReady().then(() => {
           fs.rmSync(path.join(pluginsDir, entry.name), { recursive: true, force: true })
         }
       }
-      // 删除状态文件
-      if (fs.existsSync(statesFile)) {
-        fs.rmSync(statesFile, { force: true })
-      }
-      // 重新加载插件
+      // 重新加载插件（clearAll 自动清理 registry 和内存）
       pluginLoader.clearAll()
       if (mainWindow) {
         pluginLoader.setMainWindow(mainWindow)
-        pluginLoader.loadAll(pluginsDir)
+        pluginLoader.setRegistry(pluginRegistry)
+        await pluginLoader.loadAll(pluginsDir)
       }
       return { success: true }
     } catch (e) {
@@ -343,6 +535,91 @@ app.whenReady().then(() => {
     await shell.openPath(pluginsDir)
     return { success: true }
   })
+
+  // ========== 插件配置 API IPC ==========
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.CONFIG_GET, (_event, pluginId: string, key: string, defaultValue?: any) => {
+    return pluginLoader.getPluginConfig(pluginId)?.get(key, defaultValue)
+  })
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.CONFIG_SET, (_event, pluginId: string, key: string, value: any) => {
+    pluginLoader.getPluginConfig(pluginId)?.set(key, value)
+  })
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.CONFIG_GET_ALL, (_event, pluginId: string) => {
+    return pluginLoader.getPluginConfig(pluginId)?.getAll()
+  })
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.CONFIG_UPDATE, (_event, pluginId: string, partial: Record<string, any>) => {
+    pluginLoader.getPluginConfig(pluginId)?.update(partial)
+  })
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.CONFIG_RESET, (_event, pluginId: string, key?: string) => {
+    pluginLoader.getPluginConfig(pluginId)?.reset(key)
+  })
+
+  // ========== 插件事件总线 IPC（渲染 → 主） ==========
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.EVENTS_EMIT, (_event, eventName: string, data?: any) => {
+    eventBus.emit(eventName, data)
+  })
+
+  // ========== 插件元信息 IPC ==========
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.META_GET_PLUGIN, (_event, pluginId: string) => {
+    return pluginLoader.getPlugin(pluginId)?.manifest ?? null
+  })
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.META_GET_ALL, () => {
+    return pluginLoader.getManifests()
+  })
+
+  ipcMain.handle(PLUGIN_IPC_CHANNELS.META_IS_ENABLED, (_event, pluginId: string) => {
+    return pluginLoader.getPlugin(pluginId)?.manifest.enabled ?? false
+  })
+
+  // ========== 插件错误报告 ==========
+
+  ipcMain.handle('plugin:report-error', (_event, data: { pluginId: string; error: { message: string; stack?: string }; componentStack: string }) => {
+    logger.error('PluginRender', `[${data.pluginId}] ${data.error.message}`)
+    if (data.error.stack) {
+      logger.error('PluginRender', `[${data.pluginId}] Stack: ${data.error.stack.split('\n').slice(0, 3).join(' | ')}`)
+    }
+  })
+
+  // ========== 系统事件桥接（主 → 渲染） ==========
+
+  // 窗口最大化/还原事件 → 事件总线
+  mainWindow?.on('maximize', () => {
+    eventBus.emit(SYSTEM_EVENTS.WINDOW_STATE_CHANGED, { maximized: true })
+  })
+  mainWindow?.on('unmaximize', () => {
+    eventBus.emit(SYSTEM_EVENTS.WINDOW_STATE_CHANGED, { maximized: false })
+  })
+
+  // 事件总线 → 渲染进程桥接（将主进程事件转发给渲染进程）
+  function bridgeEventToRenderer(eventName: string, data: any) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('plugin:event', eventName, data)
+    }
+  }
+
+  // 订阅所有系统事件并桥接到渲染进程
+  const systemEventNames: string[] = Object.values(SYSTEM_EVENTS)
+  for (const name of systemEventNames) {
+    eventBus.on(name, (data: any) => bridgeEventToRenderer(name, data))
+  }
+
+  // 包装 eventBus.emit：
+  // - 系统事件已通过 eventBus.on 订阅桥接到渲染进程（见上方 for 循环）
+  // - 此处仅桥接非系统事件，避免双重发送
+  const originalEmit = eventBus.emit.bind(eventBus)
+  eventBus.emit = (eventName: string, data?: any) => {
+    originalEmit(eventName, data)
+    if (mainWindow && !mainWindow.isDestroyed() && !systemEventNames.includes(eventName)) {
+      mainWindow.webContents.send('plugin:event', eventName, data)
+    }
+  }
 })
 
 app.on('window-all-closed', () => {

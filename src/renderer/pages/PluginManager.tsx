@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Puzzle, Trash2, Bell, FolderOpen, RefreshCw } from 'lucide-react'
+import { Puzzle, Trash2, Bell, FolderOpen, RefreshCw, FileArchive } from 'lucide-react'
 import { usePluginStore } from '../stores/pluginStore'
 import { useToastStore } from '../stores/toastStore'
 
@@ -10,7 +10,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 }
 
 export default function PluginManagerPage() {
-  const { plugins, loading, loadPlugins, togglePlugin, installPlugin, uninstallPlugin } = usePluginStore()
+  const { plugins, loading, loadPlugins, togglePlugin, installPlugin, installPluginFromFile, uninstallPlugin } = usePluginStore()
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
@@ -35,7 +35,24 @@ export default function PluginManagerPage() {
     }
   }
 
+  const handleInstallFromFile = async () => {
+    setInstalling(true)
+    try {
+      const result = await installPluginFromFile()
+      if (result.success) {
+        showToast('插件安装成功')
+      } else if (result.error !== '用户取消') {
+        showToast(result.error || '安装失败', 'error')
+      }
+    } finally {
+      setInstalling(false)
+    }
+  }
+
   const handleUninstall = async (pluginId: string, pluginName: string) => {
+    if (!window.confirm(`确定要卸载插件「${pluginName}」吗？\n\n卸载将删除该插件的所有文件，此操作不可撤销。`)) {
+      return
+    }
     const result = await uninstallPlugin(pluginId)
     if (result.success) {
       showToast(`已卸载 ${pluginName}`)
@@ -56,18 +73,33 @@ export default function PluginManagerPage() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">插件管理</h2>
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">管理和扩展工具集功能</p>
         </div>
-        <button
-          onClick={handleInstall}
-          disabled={installing}
-          className="btn-primary flex items-center gap-2"
-        >
-          {installing ? (
-            <RefreshCw className="w-4 h-4 animate-spin" />
-          ) : (
-            <FolderOpen className="w-4 h-4" />
-          )}
-          安装插件
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleInstallFromFile}
+            disabled={installing}
+            className="btn-secondary flex items-center gap-2"
+            title="从 .plugin.zip 文件安装"
+          >
+            {installing ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileArchive className="w-4 h-4" />
+            )}
+            从文件安装
+          </button>
+          <button
+            onClick={handleInstall}
+            disabled={installing}
+            className="btn-primary flex items-center gap-2"
+          >
+            {installing ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <FolderOpen className="w-4 h-4" />
+            )}
+            从目录安装
+          </button>
+        </div>
       </div>
 
       {loading ? (

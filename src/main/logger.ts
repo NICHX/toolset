@@ -17,7 +17,8 @@ class FileLogger {
     if (!fs.existsSync(this.logDir)) {
       try {
         fs.mkdirSync(this.logDir, { recursive: true })
-      } catch {
+      } catch (e) {
+        console.error('[Logger] Failed to create log directory:', (e as Error).message || e)
         return
       }
     }

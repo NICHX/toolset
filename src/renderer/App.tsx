@@ -68,7 +68,7 @@ export default function App() {
     }
 
     // 从动态注册表中获取插件页面
-    const pluginPages = (window as any).__PLUGIN_REGISTRY__?.[pluginId]
+    const pluginPages = window.__PLUGIN_REGISTRY__?.[pluginId]
     if (pluginPages && pluginPages[pageId]) {
       const Component = pluginPages[pageId]
       const plugin = plugins.find((p) => p.id === pluginId)

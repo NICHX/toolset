@@ -5,6 +5,7 @@ node_modules/
 dist/
 release/
 .cache/
+scripts/.tmp-icons/
 
 # Environment files
 .env
@@ -35,3 +36,4 @@ Thumbs.db
 
 # Package
 *.tgz
+*.md

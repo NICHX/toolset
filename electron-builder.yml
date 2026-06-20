@@ -6,10 +6,16 @@ files:
   - dist/**/*
   - assets/**/*
 win:
-  target: nsis
+  target:
+    - target: nsis
+      arch:
+        - x64
   icon: assets/icon.png
 mac:
-  target: dmg
+  target:
+    - target: dmg
+      arch:
+        - arm64
   icon: assets/icon.icns
 linux:
   target: AppImage

@@ -10,6 +10,7 @@ interface PluginState {
   loadPlugins: () => Promise<void>
   togglePlugin: (pluginId: string, enabled: boolean) => Promise<void>
   installPlugin: (sourceDir?: string) => Promise<{ success: boolean; error?: string }>
+  installPluginFromFile: () => Promise<{ success: boolean; error?: string }>
   uninstallPlugin: (pluginId: string) => Promise<{ success: boolean; error?: string }>
   clearAllPlugins: () => Promise<{ success: boolean; error?: string }>
 }
@@ -72,12 +73,18 @@ export const usePluginStore = create<PluginState>((set, get) => ({
         console.warn('[PluginStore] Failed to load saved states:', e)
       }
 
-      // Dynamically load renderer scripts
+      // Dynamically load renderer scripts（独立加载，每个脚本的错误不影响其他）
       try {
         const scripts = await window.electronAPI.plugin.getRendererScripts()
-        await Promise.all(scripts.map((s) => loadRendererScript(s.jsPath, s.cssPath)))
+        for (const s of scripts) {
+          try {
+            await loadRendererScript(s.jsPath, s.cssPath)
+          } catch (scriptErr) {
+            console.warn(`[PluginStore] Failed to load renderer script for plugin ${s.id}:`, scriptErr)
+          }
+        }
       } catch (scriptErr) {
-        console.warn('[PluginStore] Failed to load some renderer scripts:', scriptErr)
+        console.warn('[PluginStore] Failed to get renderer scripts:', scriptErr)
       }
     } catch (err) {
       set({ error: (err as Error).message, loading: false })
@@ -112,12 +119,44 @@ export const usePluginStore = create<PluginState>((set, get) => ({
         // 重新加载插件列表
         const plugins = await window.electronAPI.plugin.getLoaded()
         set({ plugins })
-        // 重新加载渲染进程脚本（IIFE），替换可能已崩溃的旧版本
+        // 独立加载 renderer scripts，每个脚本的错误不影响其他
         try {
           const scripts = await window.electronAPI.plugin.getRendererScripts()
-          await Promise.all(scripts.map((s) => loadRendererScript(s.jsPath, s.cssPath)))
+          for (const s of scripts) {
+            try {
+              await loadRendererScript(s.jsPath, s.cssPath)
+            } catch (scriptErr) {
+              console.warn(`[PluginStore] Failed to load renderer script for plugin ${s.id} after install:`, scriptErr)
+            }
+          }
         } catch (scriptErr) {
-          console.warn('[PluginStore] Failed to load renderer scripts after install:', scriptErr)
+          console.warn('[PluginStore] Failed to get renderer scripts after install:', scriptErr)
+        }
+      }
+      return result
+    } catch (err) {
+      return { success: false, error: (err as Error).message }
+    }
+  },
+
+  installPluginFromFile: async () => {
+    try {
+      const result = await window.electronAPI.plugin.invoke('plugin:install-from-file')
+      if (result.success) {
+        const plugins = await window.electronAPI.plugin.getLoaded()
+        set({ plugins })
+        // 独立加载 renderer scripts，每个脚本的错误不影响其他
+        try {
+          const scripts = await window.electronAPI.plugin.getRendererScripts()
+          for (const s of scripts) {
+            try {
+              await loadRendererScript(s.jsPath, s.cssPath)
+            } catch (scriptErr) {
+              console.warn(`[PluginStore] Failed to load renderer script for plugin ${s.id} after file install:`, scriptErr)
+            }
+          }
+        } catch (scriptErr) {
+          console.warn('[PluginStore] Failed to get renderer scripts after file install:', scriptErr)
         }
       }
       return result
@@ -130,6 +169,12 @@ export const usePluginStore = create<PluginState>((set, get) => ({
     try {
       const result = await window.electronAPI.plugin.invoke('plugin:uninstall', pluginId)
       if (result.success) {
+        // 清理 DOM 中该插件的 JS 和 CSS 标签
+        const scriptId = `plugin-js-plugin://${pluginId}/renderer/index.js`
+        const linkId = `plugin-css-plugin://${pluginId}/renderer/index.js`
+        document.getElementById(scriptId)?.remove()
+        document.getElementById(linkId)?.remove()
+
         // 重新加载插件列表
         const plugins = await window.electronAPI.plugin.getLoaded()
         set({ plugins })

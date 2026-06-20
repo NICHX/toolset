@@ -49,8 +49,10 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
   }, [])
 
   useEffect(() => {
-    if (searchOpen && currentPage.startsWith('reminder:')) {
-      (window.electronAPI as any).task?.getAll?.().then(setSearchTasks).catch(() => {})
+    // 仅当搜索打开且当前处于 reminder 插件页面时，加载任务列表用于搜索
+    const activePluginId = currentPage.includes(':') ? currentPage.split(':')[0] : null
+    if (searchOpen && activePluginId === 'reminder') {
+      window.electronAPI.task?.getAll?.().then(setSearchTasks).catch(() => {})
     } else {
       setSearchTasks([])
       setSearchQuery('')
@@ -119,7 +121,35 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-slate-950 overflow-hidden">
-      <aside className="w-56 flex-shrink-0 bg-white/80 dark:bg-slate-900/80 border-r border-gray-200/80 dark:border-slate-800/50 flex flex-col transition-all duration-300">
+      {/* Windows 自定义标题栏 — 始终显示 */}
+      {showControls && (
+        <div
+          className="fixed top-0 left-0 right-0 h-9 z-50 flex items-center justify-between bg-white/80 dark:bg-slate-900/80 border-b border-gray-200/80 dark:border-slate-800/50 select-none"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          <span className="ml-3 text-xs font-medium text-gray-500 dark:text-slate-400">工具集</span>
+          <div className="flex h-full" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <button onClick={() => window.electronAPI.app.minimize()} className="w-[46px] h-full flex items-center justify-center hover:bg-gray-200/80 dark:hover:bg-slate-700/60 transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200">
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => window.electronAPI.app.maximize()} className="w-[46px] h-full flex items-center justify-center hover:bg-gray-200/80 dark:hover:bg-slate-700/60 transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200">
+              {isMaximized ? (
+                <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="3" y="5" width="9" height="9" rx="1" />
+                  <path d="M12 5V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v1" />
+                </svg>
+              ) : (
+                <Square className="w-3.5 h-3.5" />
+              )}
+            </button>
+            <button onClick={() => window.electronAPI.app.close()} className="w-[46px] h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors text-gray-500 dark:text-slate-400">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <aside className={cn('w-56 flex-shrink-0 bg-white/80 dark:bg-slate-900/80 border-r border-gray-200/80 dark:border-slate-800/50 flex flex-col transition-all duration-300', showControls ? 'pt-9' : '')}>
         <div className={cn('min-h-14 flex items-center gap-3 px-5 pb-2 border-b border-gray-200/80 dark:border-slate-800/50', isMac ? 'pt-[38px]' : 'pt-3')} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <Sparkles className="w-4 h-4 text-white" />
@@ -304,36 +334,6 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
                   <span className="hidden sm:inline">搜索 (Ctrl+F)</span>
                 </button>
               ))}
-
-              <div className="flex items-center gap-3 h-full">
-                {!currentPage.startsWith('_system:') && (
-                  <span className="text-sm text-gray-500 dark:text-slate-400">
-                    {new Date().toLocaleDateString('zh-CN', {
-                      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
-                    })}
-                  </span>
-                )}
-                {showControls && (
-                  <div className="flex h-full" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                    <button onClick={() => window.electronAPI.app.minimize()} className="w-[46px] h-full flex items-center justify-center hover:bg-gray-200/80 dark:hover:bg-slate-700/60 transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200">
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => window.electronAPI.app.maximize()} className="w-[46px] h-full flex items-center justify-center hover:bg-gray-200/80 dark:hover:bg-slate-700/60 transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200">
-                      {isMaximized ? (
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <rect x="3" y="5" width="9" height="9" rx="1" />
-                          <path d="M12 5V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v1" />
-                        </svg>
-                      ) : (
-                        <Square className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                    <button onClick={() => window.electronAPI.app.close()} className="w-[46px] h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors text-gray-500 dark:text-slate-400">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
             </>
           )}
         </header>

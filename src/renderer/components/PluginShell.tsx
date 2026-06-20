@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { PluginErrorBoundary } from './PluginErrorBoundary'
 
 interface PluginShellProps {
   pluginId: string
@@ -16,6 +17,12 @@ interface ShellState {
 
 const hostCssCache = new Map<string, string>()
 let hostLinkUrls: string[] | null = null
+
+/** 清除样式缓存（主题切换时调用） */
+export function clearPluginShellStyleCache() {
+  hostCssCache.clear()
+  hostLinkUrls = null
+}
 
 function collectHostLinkUrls(): string[] {
   if (hostLinkUrls) return hostLinkUrls
@@ -44,7 +51,8 @@ function collectHostInlineCss(): string {
           parts.push(Array.from(rules).map(r => r.cssText).join('\n'))
         }
       }
-    } catch {
+    } catch (e) {
+      console.error('[PluginShell] Failed to collect host inline CSS:', (e as Error).message || e)
     }
   }
 
@@ -93,6 +101,15 @@ function injectStyles(shadowRoot: ShadowRoot, pluginId: string, useHostStyles: b
 export default function PluginShell({ pluginId, pageId, Component, onNavigate, useHostStyles = true }: PluginShellProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<ShellState | null>(null)
+  const [renderKey, setRenderKey] = useState(0)
+
+  const handleReset = useCallback(() => {
+    setRenderKey((k) => k + 1)
+  }, [])
+
+  // 使用 ref 避免 onNavigate 变化导致整个 Shadow DOM 重建
+  const onNavigateRef = useRef(onNavigate)
+  onNavigateRef.current = onNavigate
 
   useEffect(() => {
     const host = hostRef.current
@@ -128,10 +145,16 @@ export default function PluginShell({ pluginId, pageId, Component, onNavigate, u
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
 
     // 创建独立 React root
-    const ReactDOM = (window as any).ReactDOM as typeof import('react-dom/client')
+    const ReactDOM = window.ReactDOM
     const root = ReactDOM.createRoot(container)
-    const React = (window as any).React as typeof import('react')
-    root.render(React.createElement(Component, { onNavigate }))
+    const React = window.React as typeof import('react')
+    root.render(
+      React.createElement(
+        PluginErrorBoundary,
+        { pluginId, onReset: handleReset, key: renderKey },
+        React.createElement(Component, { onNavigate: onNavigateRef.current }),
+      ),
+    )
 
     stateRef.current = { shadowRoot, root, themeObserver }
 
@@ -144,7 +167,7 @@ export default function PluginShell({ pluginId, pageId, Component, onNavigate, u
       themeObserver.disconnect()
       stateRef.current = null
     }
-  }, [pluginId, pageId, Component, onNavigate, useHostStyles])
+  }, [pluginId, pageId, Component, useHostStyles, renderKey, handleReset])
 
   return (
     <div
