@@ -95,7 +95,7 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
   }, [])
 
   const isMac = window.electronAPI.app.platform === 'darwin'
-  const needsWinControls = window.electronAPI.app.isMainWindow && !isMac
+  const needsWinControls = !isMac
 
   const getPageTitle = (): string => {
     if (onHomePage) return '工具首页'
@@ -127,41 +127,51 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
         {/* Windows 窗口控制按钮 — 集成在侧边栏顶部 */}
         <div className={cn("flex flex-col", needsWinControls ? "pt-0" : "pt-[38px]")} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
           {needsWinControls && (
-            <div className="flex items-center gap-2 pl-3 h-[38px] border-b border-gray-200/80 dark:border-slate-800/50 bg-gray-50/50 dark:bg-slate-900/50" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-              <button
-                onClick={() => window.electronAPI.app.close()}
-                className="w-[14px] h-[14px] rounded-full bg-red-500 hover:bg-red-600 transition-all flex items-center justify-center group"
-                title="关闭"
-              >
-                <svg className="w-2 h-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M1 1l6 6M7 1l-6 6" />
-                </svg>
-              </button>
-              <button
-                onClick={() => window.electronAPI.app.minimize()}
-                className="w-[14px] h-[14px] rounded-full bg-yellow-500 hover:bg-yellow-600 transition-all flex items-center justify-center group"
-                title="最小化"
-              >
-                <svg className="w-2 h-2 text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M2 4h4" />
-                </svg>
-              </button>
-              <button
-                onClick={() => window.electronAPI.app.maximize()}
-                className="w-[14px] h-[14px] rounded-full bg-green-500 hover:bg-green-600 transition-all flex items-center justify-center group"
-                title="最大化"
-              >
-                {isMaximized ? (
-                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="1.5" y="2.5" width="4.5" height="4.5" rx="0.5" />
-                    <path d="M6 2.5V2a1 1 0 0 0-1-1H2.5" />
+            <div className="flex items-center justify-between h-[38px] pl-3 pr-1 border-b border-gray-200/80 dark:border-slate-800/50 bg-gray-50/80 dark:bg-slate-900/80" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              {/* 窗口标题 */}
+              <span className="text-xs text-gray-500 dark:text-slate-500 select-none" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+                工具集
+              </span>
+              {/* 窗口控制按钮组 — Windows 风格，从右侧排列 */}
+              <div className="flex items-center -mr-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                {/* 最小化 */}
+                <button
+                  onClick={() => window.electronAPI.app.minimize()}
+                  className="w-[46px] h-[32px] flex items-center justify-center hover:bg-gray-200/60 dark:hover:bg-slate-700/60 transition-colors active:bg-gray-300/60 dark:active:bg-slate-600/60 group"
+                  title="最小化"
+                >
+                  <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M2 5h6" />
                   </svg>
-                ) : (
-                  <svg className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="1" y="1" width="6" height="6" rx="1" />
+                </button>
+                {/* 最大化/还原 */}
+                <button
+                  onClick={() => window.electronAPI.app.maximize()}
+                  className="w-[46px] h-[32px] flex items-center justify-center hover:bg-gray-200/60 dark:hover:bg-slate-700/60 transition-colors active:bg-gray-300/60 dark:active:bg-slate-600/60 group"
+                  title={isMaximized ? '还原' : '最大化'}
+                >
+                  {isMaximized ? (
+                    <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="1.5" y="3.5" width="5" height="5" rx="0.5" />
+                      <path d="M7.5 3.5V2a1 1 0 0 0-1-1H2.5" />
+                    </svg>
+                  ) : (
+                    <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
+                    </svg>
+                  )}
+                </button>
+                {/* 关闭 */}
+                <button
+                  onClick={() => window.electronAPI.app.close()}
+                  className="w-[46px] h-[32px] flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors active:bg-red-600 group"
+                  title="关闭"
+                >
+                  <svg className="w-[10px] h-[10px] text-gray-600 dark:text-slate-400 group-hover:text-white" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M2 2l6 6M8 2l-6 6" />
                   </svg>
-                )}
-              </button>
+                </button>
+              </div>
             </div>
           )}
           <div className="flex items-center gap-3 px-5 pb-2 border-b border-gray-200/80 dark:border-slate-800/50" style={needsWinControls ? { WebkitAppRegion: 'no-drag' } as React.CSSProperties : undefined}>
