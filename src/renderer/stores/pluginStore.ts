@@ -19,33 +19,30 @@ interface PluginState {
   updatePlugin: (pluginId: string, packagePath: string) => Promise<{ success: boolean; error?: string }>
 }
 
-function loadRendererScript(jsPath: string, cssPath: string): Promise<void> {
+function loadRendererScript(jsPath: string, _cssPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const scriptId = `plugin-js-${jsPath}`
-    const linkId = `plugin-css-${jsPath}`
+    // 从路径中提取插件 ID 作为稳定的元素标识
+    const pluginId = jsPath.match(/plugin:\/\/([^/]+)/)?.[1] || jsPath
+    const scriptId = `plugin-js-${pluginId}`
 
-    // 移除旧 CSS（插件重新安装时需替换）
-    const oldLink = document.getElementById(linkId)
-    if (oldLink) oldLink.remove()
-
-    // 移除旧 JS 脚本标签（替换旧的已崩溃 IIFE）
+    // 移除旧 JS 脚本标签
     const oldScript = document.getElementById(scriptId)
     if (oldScript) oldScript.remove()
 
-    // Load CSS
-    const link = document.createElement('link')
-    link.id = linkId
-    link.rel = 'stylesheet'
-    link.href = cssPath
-    document.head.appendChild(link)
+    // 添加时间戳参数绕过浏览器/协议缓存（覆盖安装后才能看到新内容）
+    const url = new URL(jsPath)
+    url.searchParams.set('v', Date.now().toString())
 
     // Load JS (IIFE)
     const script = document.createElement('script')
     script.id = scriptId
-    script.src = jsPath
+    script.src = url.toString()
     script.onload = () => resolve()
     script.onerror = () => reject(new Error(`Failed to load plugin script: ${jsPath}`))
     document.body.appendChild(script)
+
+    // 注意：插件 CSS 不在此处全局注入，而是由 PluginShell 通过 Shadow DOM 加载，
+    // 避免插件样式泄漏到平台。如需全局 CSS（如插件后台脚本），请通过权限系统申请。
   })
 }
 
@@ -147,11 +144,9 @@ export const usePluginStore = create<PluginState>((set, get) => ({
     try {
       const result = await window.electronAPI.plugin.invoke('plugin:uninstall', pluginId)
       if (result.success) {
-        // 清理 DOM 中该插件的 JS 和 CSS 标签
-        const scriptId = `plugin-js-plugin://${pluginId}/renderer/index.js`
-        const linkId = `plugin-css-plugin://${pluginId}/renderer/index.js`
+        // 清理 DOM 中该插件的 JS 标签（使用与 loadRendererScript 一致的 ID 格式）
+        const scriptId = `plugin-js-${pluginId}`
         document.getElementById(scriptId)?.remove()
-        document.getElementById(linkId)?.remove()
 
         // 重新加载插件列表
         const plugins = await window.electronAPI.plugin.getLoaded()
@@ -191,6 +186,19 @@ export const usePluginStore = create<PluginState>((set, get) => ({
         // 重新加载插件列表
         const plugins = await window.electronAPI.plugin.getLoaded()
         set({ plugins })
+        // 重新加载所有 renderer scripts，确保覆盖安装后新版本脚本生效
+        try {
+          const scripts = await window.electronAPI.plugin.getRendererScripts()
+          for (const s of scripts) {
+            try {
+              await loadRendererScript(s.jsPath, s.cssPath)
+            } catch (scriptErr) {
+              console.warn(`[PluginStore] Failed to load renderer script for plugin ${s.id} after update:`, scriptErr)
+            }
+          }
+        } catch (scriptErr) {
+          console.warn('[PluginStore] Failed to get renderer scripts after update:', scriptErr)
+        }
       }
       return result
     } catch (err) {

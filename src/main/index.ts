@@ -307,12 +307,22 @@ app.whenReady().then(async () => {
   }
 
   // 注册 plugin:// 协议处理器，将 plugin://plugin-id/path 映射到本地文件
-  protocol.handle('plugin', (request) => {
+  protocol.handle('plugin', async (request) => {
     const url = new URL(request.url)
     const pluginId = url.hostname
     // 解码路径，移除开头的 /
     const filePath = path.join(pluginsDir, pluginId, decodeURIComponent(url.pathname))
-    return net.fetch(`file://${filePath}`)
+    const response = await net.fetch(`file://${filePath}`)
+    // 添加防缓存头，确保覆盖安装后 renderer script 能获取最新内容
+    const headers = new Headers(response.headers)
+    headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+    headers.set('Pragma', 'no-cache')
+    headers.set('Expires', '0')
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    })
   })
 
   // ★ 先注册所有 IPC handler（必须在 createMainWindow 之前，
