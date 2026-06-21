@@ -26,6 +26,7 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
   const [isMaximized, setIsMaximized] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [appVersion, setAppVersion] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [searchTasks, setSearchTasks] = useState<any[]>([])
@@ -93,6 +94,10 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
       const cleanup = window.electronAPI.app.onMaximizedChanged(setIsMaximized)
       return cleanup
     }
+  }, [])
+
+  useEffect(() => {
+    window.electronAPI.app.getVersion().then(setAppVersion).catch(() => setAppVersion(''))
   }, [])
 
   const isMac = window.electronAPI.app.platform === 'darwin'
@@ -275,10 +280,10 @@ export default function AppLayout({ children, currentPage, onNavigate, plugins }
         <div className="px-5 py-4 border-t border-gray-200/80 dark:border-slate-800/50">
           {(onHomePage || currentPage.startsWith('_system:')) ? (
             <p className="text-xs text-gray-400 dark:text-slate-600">
-              {onHomePage ? '选择一个工具开始使用' : '工具集 v1.0.2'}
+              {onHomePage ? '选择一个工具开始使用' : `工具集 v${appVersion}`}
             </p>
           ) : (
-            <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.2</p>
+            <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v{appVersion}</p>
           )}
         </div>
       </aside>

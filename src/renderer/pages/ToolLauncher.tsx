@@ -21,9 +21,11 @@ interface ToolLauncherProps {
 export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
   const { plugins, loading, loadPlugins, installPlugin } = usePluginStore()
   const [currentTime, setCurrentTime] = useState(new Date())
+  const [appVersion, setAppVersion] = useState('')
 
   useEffect(() => {
     loadPlugins()
+    window.electronAPI.app.getVersion().then(setAppVersion).catch(() => setAppVersion(''))
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [loadPlugins])
@@ -257,7 +259,7 @@ export default function ToolLauncher({ onNavigate }: ToolLauncherProps) {
         </section>
 
         <div className="text-center pt-4 pb-2">
-          <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v1.0.2</p>
+          <p className="text-xs text-gray-400 dark:text-slate-600">工具集 v{appVersion}</p>
         </div>
       </div>
     </div>

@@ -113,7 +113,7 @@ function createMainWindow() {
 
 // Generic IPC handlers (not plugin-specific)
 function setupGenericIpcHandlers() {
-  ipcMain.handle('app:get-version', () => '1.0.0')
+  ipcMain.handle('app:get-version', () => app.getVersion())
 
   ipcMain.handle('app:minimize', () => {
     mainWindow?.minimize()
@@ -1075,6 +1075,16 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('plugins:reloaded')
     }
   }
+
+  // IPC: 重载所有插件（不重启软件）
+  ipcMain.handle('plugin:reload-all', async () => {
+    try {
+      await reloadPlugins()
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
 
   // ========== 系统事件桥接（主 → 渲染） ==========
 

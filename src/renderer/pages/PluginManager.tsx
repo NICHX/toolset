@@ -10,9 +10,10 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 }
 
 export default function PluginManagerPage() {
-  const { plugins, loading, loadPlugins, togglePlugin, installPlugin, uninstallPlugin, checkPluginUpdate, updatePlugin } = usePluginStore()
+  const { plugins, loading, loadPlugins, togglePlugin, installPlugin, uninstallPlugin, checkPluginUpdate, updatePlugin, reloadAllPlugins } = usePluginStore()
   const [installing, setInstalling] = useState(false)
   const [updating, setUpdating] = useState(false)
+  const [reloading, setReloading] = useState(false)
   const [depModalOpen, setDepModalOpen] = useState(false)
   const [depLoading, setDepLoading] = useState(false)
   const [depResults, setDepResults] = useState<Map<string, { resolved: any; errors: string[] }>>(new Map())
@@ -93,6 +94,21 @@ export default function PluginManagerPage() {
       }
     } finally {
       setUpdating(false)
+    }
+  }
+
+  /** 重载所有插件 */
+  const handleReloadAll = async () => {
+    setReloading(true)
+    try {
+      const result = await reloadAllPlugins()
+      if (result.success) {
+        showToast('所有插件已重载')
+      } else {
+        showToast(result.error || '重载失败', 'error')
+      }
+    } finally {
+      setReloading(false)
     }
   }
 
@@ -179,6 +195,15 @@ export default function PluginManagerPage() {
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">管理和扩展工具集功能</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleReloadAll}
+            disabled={reloading}
+            className="btn-secondary flex items-center gap-2"
+            title="重新加载所有插件（无需重启软件）"
+          >
+            <RefreshCw className={`w-4 h-4 ${reloading ? 'animate-spin' : ''}`} />
+            重载插件
+          </button>
           <button
             onClick={handleCheckDependencies}
             className="btn-secondary flex items-center gap-2"

@@ -17,6 +17,8 @@ interface PluginState {
   checkPluginUpdate: () => Promise<{ success: boolean; error?: string; updateInfo?: PluginUpdateInfo; packagePath?: string }>
   /** 执行插件更新 */
   updatePlugin: (pluginId: string, packagePath: string) => Promise<{ success: boolean; error?: string }>
+  /** 重载所有插件（无需重启） */
+  reloadAllPlugins: () => Promise<{ success: boolean; error?: string }>
 }
 
 function loadRendererScript(jsPath: string, _cssPath: string): Promise<void> {
@@ -198,6 +200,37 @@ export const usePluginStore = create<PluginState>((set, get) => ({
           }
         } catch (scriptErr) {
           console.warn('[PluginStore] Failed to get renderer scripts after update:', scriptErr)
+        }
+      }
+      return result
+    } catch (err) {
+      return { success: false, error: (err as Error).message }
+    }
+  },
+
+  reloadAllPlugins: async () => {
+    try {
+      const result = await window.electronAPI.plugin.invoke('plugin:reload-all')
+      if (result.success) {
+        // 重新加载插件列表
+        const plugins = await window.electronAPI.plugin.getLoaded()
+        set({ plugins })
+
+        // 清除旧插件脚本并重新加载所有 renderer scripts
+        // 先移除所有 plugin-js- 前缀的 script 标签
+        document.querySelectorAll('script[id^="plugin-js-"]').forEach((s) => s.remove())
+
+        try {
+          const scripts = await window.electronAPI.plugin.getRendererScripts()
+          for (const s of scripts) {
+            try {
+              await loadRendererScript(s.jsPath, s.cssPath)
+            } catch (scriptErr) {
+              console.warn(`[PluginStore] Failed to load renderer script for plugin ${s.id} after reload:`, scriptErr)
+            }
+          }
+        } catch (scriptErr) {
+          console.warn('[PluginStore] Failed to get renderer scripts after reload:', scriptErr)
         }
       }
       return result
